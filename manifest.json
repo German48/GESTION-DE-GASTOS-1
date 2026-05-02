@@ -1,14 +1,12 @@
 {
     "name": "Gestión Financiera - Madera",
-    "short_name": "Gestion Madera",
+    "short_name": "Gestión Madera",
     "description": "Sistema de gestión de ingresos y gastos para el departamento de madera.",
     "start_url": "./index.html",
-    "scope": "./",
     "display": "standalone",
     "background_color": "#1a1a1a",
     "theme_color": "#8b5e3c",
-    "orientation": "any",
-    "id": "/GESTION-DE-GASTOS/",
+    "orientation": "portrait",
     "icons": [
         {
             "src": "./assets/icon-192.png",
@@ -22,8 +20,5 @@
             "type": "image/png",
             "purpose": "any maskable"
         }
-    ],
-    "categories": ["productivity", "finance"],
-    "lang": "es",
-    "dir": "ltr"
+    ]
 }

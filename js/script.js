@@ -4,6 +4,7 @@
  */
 
 import { initSupabase, getMovimientos, createMovimiento, deleteMovimiento, uploadFacturaBase64, createDocumentoPendiente, getDocumentosPendientes, updateDocumentoPendiente } from './supabase-client.js';
+import { MOVEMENTS_SEED } from './movimientos-seed.js';
 import { EXTERNAL_OCR_URL, EXTERNAL_OCR_API_KEY, EXTERNAL_OCR_TIMEOUT_MS } from './ocr-external-config.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,16 +64,26 @@ document.addEventListener('DOMContentLoaded', () => {
     let remotePendingAvailable = false;
     const rowsPerPage = 10;
     const PENDING_STORAGE_KEY = 'gestion_pendientes_revision';
+    const MOVEMENTS_STORAGE_KEY = 'gestion_movimientos_cache';
+    const OFFLINE_QUEUE_STORAGE_KEY = 'gestion_sync_queue_v1';
+    const offlineStatusBanner = document.getElementById('offline-status');
+    let syncInProgress = false;
 
     // --- INICIALIZACIÓN ---
     const init = async () => {
         setupTheme();
         setupEventListeners();
-        loadPendingItems();
-        loadMovements();
         setDefaultDate();
         await applyPrefillFromUrl();
         toggleCategoryFields();
+        await hydrateMovementCacheFromSeed();
+        await Promise.allSettled([loadPendingItems(), loadMovements()]);
+        if (navigator.onLine) {
+            const syncSummary = await processSyncQueue({ silent: true });
+            if (syncSummary.processed > 0) {
+                await Promise.allSettled([loadPendingItems(), loadMovements()]);
+            }
+        }
     };
 
     // --- MANEJO DEL TEMA ---
@@ -112,6 +123,328 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTable();
         });
         exportCsvBtn?.addEventListener('click', exportMovementsToCsv);
+        window.addEventListener('online', handleConnectionBackOnline);
+        window.addEventListener('offline', handleConnectionLost);
+    };
+
+    const isOfflineLikeError = (error) => error?.code === 'OFFLINE_OR_NETWORK' || !navigator.onLine;
+
+    const readStoredArray = (key) => {
+        try {
+            const raw = localStorage.getItem(key);
+            return raw ? JSON.parse(raw) : [];
+        } catch (error) {
+            console.warn(`No se pudo leer ${key} de localStorage.`, error);
+            return [];
+        }
+    };
+
+    const writeStoredArray = (key, value) => {
+        try {
+            localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.warn(`No se pudo guardar ${key} en localStorage.`, error);
+        }
+    };
+
+    const getOfflineQueue = () => readStoredArray(OFFLINE_QUEUE_STORAGE_KEY);
+    const saveOfflineQueue = (queue) => writeStoredArray(OFFLINE_QUEUE_STORAGE_KEY, queue);
+    const getOfflineQueueCount = () => getOfflineQueue().length;
+    const nextQueueId = () => `sync-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+    const enqueueSyncOperation = (type, payload) => {
+        const queue = getOfflineQueue();
+        const entry = {
+            id: nextQueueId(),
+            type,
+            payload,
+            createdAt: new Date().toISOString()
+        };
+        queue.push(entry);
+        saveOfflineQueue(queue);
+        return entry;
+    };
+
+    const removeQueuedOperations = (predicate) => {
+        const queue = getOfflineQueue();
+        const nextQueue = queue.filter(item => !predicate(item));
+        if (nextQueue.length !== queue.length) {
+            saveOfflineQueue(nextQueue);
+        }
+    };
+
+    const upsertQueuedMovement = (entry, movimientoData) => {
+        const queuedMovement = {
+            id: `queued-${entry.id}`,
+            Timestamp: new Date().toISOString(),
+            Tipo: movimientoData.tipo,
+            Fecha: movimientoData.fecha ? new Date(movimientoData.fecha).toLocaleDateString('es-ES') : 'Sin fecha',
+            Concepto: movimientoData.concepto || 'Sin concepto',
+            Categoría: movimientoData.categoria || '',
+            Importe: Number(movimientoData.importe || 0),
+            Observaciones: [movimientoData.observaciones, 'Pendiente de sincronizar'].filter(Boolean).join(' · '),
+            'Tipo Documento': movimientoData.tipo_documento,
+            'URL PDF': null,
+            'OCR Detectado': movimientoData.ocr_detectado || 'Pendiente de sincronizar',
+            _queued: true,
+            _queueId: entry.id
+        };
+
+        allMovements = [queuedMovement, ...allMovements.filter(mov => mov._queueId !== entry.id)];
+        saveMovementCache(allMovements);
+        renderTable();
+    };
+
+    const removeQueuedMovement = (queueId) => {
+        if (!queueId) return;
+        const before = allMovements.length;
+        allMovements = allMovements.filter(mov => mov._queueId !== queueId);
+        if (allMovements.length !== before) {
+            saveMovementCache(allMovements);
+            renderTable();
+        }
+    };
+
+    const removeLocalPendingItemById = (pendingId) => {
+        if (!pendingId) return;
+        pendingItems = pendingItems.filter(item => Number(item.id) !== Number(pendingId));
+        savePendingItems();
+    };
+
+    const buildPendingRemotePayload = (snapshot) => ({
+        origen: 'web-manual',
+        estado: 'pendiente',
+        tipo: snapshot.tipo,
+        fecha_detectada: snapshot.fecha || null,
+        importe_detectado: snapshot.importe ? parseFloat(snapshot.importe) : null,
+        proveedor_detectado: snapshot.analysis?.provider || null,
+        numero_factura: snapshot.analysis?.invoiceNumber || null,
+        tipo_documento: snapshot.tipo_documento || null,
+        concepto_sugerido: snapshot.concepto || null,
+        confianza_ocr: snapshot.analysis?.confidenceScore || null,
+        ocr_resumen: snapshot.ocrStatus || null,
+        documento_url: null,
+        metadata_json: {
+            analysis: snapshot.analysis || null,
+            observaciones: snapshot.observaciones || null,
+            categoria: snapshot.categoria || null,
+            local_pending_id: snapshot.id
+        }
+    });
+
+    const syncQueuedEntry = async (entry) => {
+        switch (entry.type) {
+            case 'create-movement': {
+                const { movimientoData, attachedFileData, pendingToRemoveId, remotePendingId } = entry.payload;
+                let urlPdf = movimientoData.url_pdf || null;
+                if (!urlPdf && attachedFileData?.base64) {
+                    urlPdf = await uploadFacturaBase64(attachedFileData.base64, attachedFileData.name, attachedFileData.type);
+                }
+                await createMovimiento({ ...movimientoData, url_pdf: urlPdf });
+                if (remotePendingId) {
+                    await updateDocumentoPendiente(remotePendingId, { estado: 'validado' });
+                }
+                if (pendingToRemoveId) {
+                    removeLocalPendingItemById(pendingToRemoveId);
+                }
+                removeQueuedMovement(entry.id);
+                return 'Movimiento sincronizado';
+            }
+            case 'delete-movement':
+                await deleteMovimiento(entry.payload.remoteId);
+                return 'Eliminación sincronizada';
+            case 'create-pending':
+                await createDocumentoPendiente(entry.payload.data);
+                return 'Pendiente sincronizado';
+            case 'update-pending':
+                await updateDocumentoPendiente(entry.payload.remoteId, entry.payload.changes);
+                return 'Pendiente actualizado';
+            default:
+                throw new Error(`Tipo de sincronización desconocido: ${entry.type}`);
+        }
+    };
+
+    const processSyncQueue = async ({ silent = false, syncHandler = syncQueuedEntry, forceOnline = false } = {}) => {
+        if (syncInProgress || (!forceOnline && !navigator.onLine)) {
+            return { processed: 0, failed: 0, remaining: getOfflineQueueCount() };
+        }
+
+        const queue = getOfflineQueue();
+        if (!queue.length) {
+            return { processed: 0, failed: 0, remaining: 0 };
+        }
+
+        syncInProgress = true;
+        let processed = 0;
+        let failed = 0;
+        let remaining = [];
+
+        try {
+            for (let index = 0; index < queue.length; index += 1) {
+                const entry = queue[index];
+                try {
+                    await syncHandler(entry);
+                    processed += 1;
+                } catch (error) {
+                    failed += 1;
+                    remaining.push(entry);
+                    if (!isOfflineLikeError(error)) {
+                        console.error('Error al sincronizar la cola offline:', entry, error);
+                    }
+                    if (isOfflineLikeError(error)) {
+                        remaining = [...remaining, ...queue.slice(index + 1)];
+                        break;
+                    }
+                }
+            }
+
+            saveOfflineQueue(remaining);
+        } finally {
+            syncInProgress = false;
+        }
+
+        if (!silent) {
+            if (processed > 0) {
+                showToast(`Sincronización completada: ${processed} cambio(s) enviado(s) a Supabase.`, 'success');
+            }
+            if (failed > 0 && remaining.length > 0) {
+                setOfflineBannerMessage(`Quedan ${remaining.length} cambio(s) pendientes de sincronizar con Supabase.`);
+                showToast(`Quedan ${remaining.length} cambio(s) en cola para el próximo intento.`, 'info');
+            }
+        }
+
+        return { processed, failed, remaining: remaining.length };
+    };
+
+    const runOfflineQueueSelfTest = async () => {
+        const originalQueue = getOfflineQueue();
+        const testEntries = [
+            { id: 'test-ok-1', type: '__test__', payload: { step: 'ok-1' }, createdAt: new Date().toISOString() },
+            { id: 'test-offline', type: '__test__', payload: { step: 'offline' }, createdAt: new Date().toISOString() },
+            { id: 'test-ok-2', type: '__test__', payload: { step: 'ok-2' }, createdAt: new Date().toISOString() }
+        ];
+        const seen = [];
+
+        try {
+            saveOfflineQueue(testEntries);
+            const summary = await processSyncQueue({
+                silent: true,
+                forceOnline: true,
+                syncHandler: async (entry) => {
+                    seen.push(entry.id);
+                    if (entry.payload.step === 'offline') {
+                        const error = new Error('offline-test');
+                        error.code = 'OFFLINE_OR_NETWORK';
+                        throw error;
+                    }
+                    return entry.id;
+                }
+            });
+
+            const remainingQueue = getOfflineQueue();
+            const passed = summary.processed === 1
+                && summary.failed === 1
+                && summary.remaining === 2
+                && seen.join(',') === 'test-ok-1,test-offline'
+                && remainingQueue.map(entry => entry.id).join(',') === 'test-offline,test-ok-2';
+
+            return {
+                passed,
+                summary,
+                seen,
+                remainingIds: remainingQueue.map(entry => entry.id)
+            };
+        } finally {
+            saveOfflineQueue(originalQueue);
+        }
+    };
+
+
+    const setOfflineBannerMessage = (message, visible = true) => {
+        if (!offlineStatusBanner) return;
+        const textSpan = offlineStatusBanner.querySelector('span') || offlineStatusBanner;
+        textSpan.textContent = message;
+        offlineStatusBanner.classList.toggle('hidden', !visible);
+    };
+
+    const saveMovementCache = (movements) => {
+        try {
+            localStorage.setItem(MOVEMENTS_STORAGE_KEY, JSON.stringify(movements));
+        } catch (error) {
+            console.warn('No se pudo guardar la caché local de movimientos.', error);
+        }
+    };
+
+    const loadMovementCache = () => {
+        try {
+            return JSON.parse(localStorage.getItem(MOVEMENTS_STORAGE_KEY) || '[]');
+        } catch (error) {
+            console.warn('La caché local de movimientos está dañada; se ignorará.', error);
+            return [];
+        }
+    };
+
+    const hydrateMovementCacheFromSeed = async () => {
+        const cachedMovements = loadMovementCache();
+        if (cachedMovements.length) {
+            return cachedMovements;
+        }
+
+        try {
+            const seededMovements = Array.isArray(MOVEMENTS_SEED) ? MOVEMENTS_SEED : [];
+            if (seededMovements.length) {
+                saveMovementCache(seededMovements);
+            }
+            return seededMovements;
+        } catch (error) {
+            console.warn('No se pudo hidratar la caché local de movimientos desde el seed.', error);
+            return [];
+        }
+    };
+
+    const mapSupabaseMovement = (mov) => ({
+        id: mov.id,
+        Timestamp: mov.timestamp,
+        Tipo: mov.tipo,
+        Fecha: new Date(mov.fecha).toLocaleDateString('es-ES'),
+        Concepto: mov.concepto,
+        Categoría: mov.categoria,
+        Importe: mov.importe,
+        Observaciones: mov.observaciones,
+        'Tipo Documento': mov.tipo_documento,
+        'URL PDF': mov.url_pdf,
+        'OCR Detectado': mov.ocr_detectado
+    });
+
+    const renderTableMessage = (message) => {
+        tableBody.innerHTML = '';
+        const tr = document.createElement('tr');
+        const td = document.createElement('td');
+        td.colSpan = 7;
+        td.textContent = message;
+        tr.appendChild(td);
+        tableBody.appendChild(tr);
+    };
+
+    const handleConnectionLost = () => {
+        const queueCount = getOfflineQueueCount();
+        const suffix = queueCount > 0 ? ` Ya hay ${queueCount} cambio(s) esperando sincronización.` : '';
+        setOfflineBannerMessage(`Sin conexión: puedes seguir usando la app y los cambios nuevos se guardarán en cola hasta volver a tener Internet.${suffix}`);
+        showToast('Modo sin conexión activado. Los cambios nuevos se guardarán en cola local.', 'info');
+    };
+
+    const handleConnectionBackOnline = async () => {
+        if (offlineStatusBanner) {
+            setOfflineBannerMessage('Conexión recuperada. Sincronizando cambios pendientes con Supabase...', true);
+        }
+
+        const syncSummary = await processSyncQueue();
+        showToast('Conexión recuperada. Recargando datos de Supabase...', 'success');
+        await Promise.allSettled([loadPendingItems(), loadMovements()]);
+
+        if (navigator.onLine && offlineStatusBanner && syncSummary.remaining === 0) {
+            offlineStatusBanner.classList.add('hidden');
+        }
     };
 
     const toggleCategoryFields = () => {
@@ -323,16 +656,18 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const loadPendingItems = async () => {
-        let localItems = [];
-        try {
-            localItems = JSON.parse(localStorage.getItem(PENDING_STORAGE_KEY) || '[]');
-        } catch {
-            localItems = [];
-        }
+        const localItems = readStoredArray(PENDING_STORAGE_KEY).map(item => ({ ...item, source: item.source || 'local' }));
 
         try {
             const remoteItems = await getDocumentosPendientes();
             remotePendingAvailable = true;
+            const syncedLocalIds = new Set(
+                remoteItems
+                    .map(item => item.metadata_json?.local_pending_id)
+                    .filter(Boolean)
+                    .map(value => Number(value))
+            );
+
             pendingItems = remoteItems.map(item => ({
                 id: item.id,
                 remoteId: item.id,
@@ -356,19 +691,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 status: item.estado || 'pendiente'
             }));
 
-            if (localItems.length) {
-                pendingItems = [...pendingItems, ...localItems.map(item => ({ ...item, source: item.source || 'local' }))];
+            const remainingLocalItems = localItems.filter(item => !syncedLocalIds.has(Number(item.id)));
+            if (remainingLocalItems.length !== localItems.length) {
+                writeStoredArray(PENDING_STORAGE_KEY, remainingLocalItems);
+            }
+
+            if (remainingLocalItems.length) {
+                pendingItems = [...pendingItems, ...remainingLocalItems];
             }
         } catch (error) {
             remotePendingAvailable = false;
-            pendingItems = localItems.map(item => ({ ...item, source: item.source || 'local' }));
+            pendingItems = localItems;
+            if (isOfflineLikeError(error)) {
+                setOfflineBannerMessage('Sin conexión con Supabase: se muestran solo los pendientes guardados en este dispositivo.');
+                if (localItems.length) {
+                    showToast('Supabase no está disponible. Mostrando pendientes guardados en este dispositivo.', 'info');
+                }
+            } else {
+                console.error('Error inesperado al cargar los pendientes:', error);
+                showToast('No se pudieron cargar los pendientes remotos.', 'error');
+            }
         }
 
         renderPendingItems();
     };
 
     const savePendingItems = () => {
-        localStorage.setItem(PENDING_STORAGE_KEY, JSON.stringify(pendingItems));
+        const localPendingItems = pendingItems.filter(item => item.source !== 'remote');
+        writeStoredArray(PENDING_STORAGE_KEY, localPendingItems);
         renderPendingItems();
     };
 
@@ -404,31 +754,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
         pendingItems.unshift(snapshot);
         savePendingItems();
+        const remotePayload = buildPendingRemotePayload(snapshot);
 
         try {
-            await createDocumentoPendiente({
-                origen: 'web-manual',
-                estado: 'pendiente',
-                tipo: snapshot.tipo,
-                fecha_detectada: snapshot.fecha || null,
-                importe_detectado: snapshot.importe ? parseFloat(snapshot.importe) : null,
-                proveedor_detectado: snapshot.analysis?.provider || null,
-                numero_factura: snapshot.analysis?.invoiceNumber || null,
-                tipo_documento: snapshot.tipo_documento || null,
-                concepto_sugerido: snapshot.concepto || null,
-                confianza_ocr: snapshot.analysis?.confidenceScore || null,
-                ocr_resumen: snapshot.ocrStatus || null,
-                documento_url: null,
-                metadata_json: {
-                    analysis: snapshot.analysis || null,
-                    observaciones: snapshot.observaciones || null,
-                    local_pending_id: snapshot.id
-                }
-            });
+            await createDocumentoPendiente(remotePayload);
             showToast('Documento guardado en pendientes y enviado a Supabase', 'success');
         } catch (error) {
-            console.warn('Pendiente guardado solo en localStorage; falta tabla documentos_pendientes o configuración equivalente.', error);
-            showToast('Pendiente guardado localmente. Supabase aún no tiene la tabla de pendientes.', 'info');
+            if (isOfflineLikeError(error)) {
+                enqueueSyncOperation('create-pending', { localPendingId: snapshot.id, data: remotePayload });
+                setOfflineBannerMessage('Sin conexión con Supabase: los pendientes nuevos se guardan en este dispositivo y se enviarán automáticamente al reconectar.');
+                showToast('Pendiente guardado localmente y añadido a la cola de sincronización.', 'info');
+            } else {
+                console.warn('Pendiente guardado solo en localStorage; falta tabla documentos_pendientes o configuración equivalente.', error);
+                showToast('Pendiente guardado localmente. Supabase aún no tiene la tabla de pendientes.', 'info');
+            }
         }
 
         form.reset();
@@ -593,8 +932,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     await updateDocumentoPendiente(item.remoteId, { estado: 'descartado' });
                 } catch (error) {
-                    console.warn('No se pudo marcar como descartado en Supabase', error);
+                    if (isOfflineLikeError(error)) {
+                        enqueueSyncOperation('update-pending', { remoteId: item.remoteId, changes: { estado: 'descartado' } });
+                        setOfflineBannerMessage('Sin conexión: el descarte del pendiente se ha guardado en cola y se aplicará al reconectar.');
+                        showToast('Pendiente marcado para descarte en cuanto vuelva la conexión.', 'info');
+                    } else {
+                        console.warn('No se pudo marcar como descartado en Supabase', error);
+                    }
                 }
+            } else {
+                removeQueuedOperations(queueItem => queueItem.payload?.localPendingId === id || queueItem.payload?.pendingToRemoveId === id);
             }
             pendingItems = pendingItems.filter(p => Number(p.id) !== id);
             savePendingItems();
@@ -607,32 +954,38 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleLoading(true, 'Cargando movimientos desde Supabase...');
         try {
             const data = await getMovimientos();
-            // Convertir formato de Supabase al formato esperado por la tabla
-            allMovements = data.map(mov => ({
-                id: mov.id,
-                Timestamp: mov.timestamp,
-                Tipo: mov.tipo,
-                Fecha: new Date(mov.fecha).toLocaleDateString('es-ES'),
-                Concepto: mov.concepto,
-                Categoría: mov.categoria,
-                Importe: mov.importe,
-                Observaciones: mov.observaciones,
-                'Tipo Documento': mov.tipo_documento,
-                'URL PDF': mov.url_pdf,
-                'OCR Detectado': mov.ocr_detectado
-            }));
+            allMovements = data.map(mapSupabaseMovement);
+            saveMovementCache(allMovements);
             renderTable();
-            showToast('Movimientos cargados correctamente', 'success');
+            if (navigator.onLine && offlineStatusBanner) {
+                offlineStatusBanner.classList.add('hidden');
+            }
         } catch (error) {
-            console.error('Error al cargar los movimientos:', error);
-            tableBody.innerHTML = '';
-            const tr = document.createElement('tr');
-            const td = document.createElement('td');
-            td.colSpan = 7;
-            td.textContent = 'Error al cargar datos desde Supabase.';
-            tr.appendChild(td);
-            tableBody.appendChild(tr);
-            showToast('Error al cargar datos', 'error');
+            const cachedMovements = loadMovementCache().length ? loadMovementCache() : await hydrateMovementCacheFromSeed();
+
+            if (cachedMovements.length) {
+                allMovements = cachedMovements;
+                renderTable();
+
+                if (isOfflineLikeError(error)) {
+                    setOfflineBannerMessage('Sin conexión con Supabase: se muestra la última copia local disponible de los movimientos.');
+                    showToast('Sin conexión. Mostrando la última copia local de movimientos.', 'info');
+                } else {
+                    console.error('Error al cargar los movimientos desde Supabase; se usa la copia local.', error);
+                    setOfflineBannerMessage('Supabase no respondió correctamente. Se muestra la copia local disponible de los movimientos.');
+                    showToast('Supabase falló. Mostrando copia local de movimientos.', 'info');
+                }
+            } else if (isOfflineLikeError(error)) {
+                setOfflineBannerMessage('Sin conexión con Supabase: se muestra la última copia local disponible de los movimientos.');
+                allMovements = [];
+                renderTableMessage('Sin conexión con Supabase. Aún no hay una copia local de movimientos en este dispositivo.');
+                showToast('Sin conexión con Supabase y sin copia local disponible todavía.', 'info');
+            } else {
+                console.error('Error al cargar los movimientos:', error);
+                allMovements = [];
+                renderTableMessage('No se pudieron cargar los movimientos desde Supabase ni desde la copia local.');
+                showToast('Error al cargar datos desde Supabase.', 'error');
+            }
         }
     };
 
@@ -812,6 +1165,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const row = document.createElement('tr');
             const isIngreso = mov.Tipo === 'Ingreso';
             const importeClass = isIngreso ? 'monto-ingreso' : 'monto-gasto';
+            const isQueuedMovement = Boolean(mov._queued);
 
             const createCell = (text, className) => {
                 const td = document.createElement('td');
@@ -843,12 +1197,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const actionTd = document.createElement('td');
             actionTd.className = "actions-col";
-            const btn = document.createElement('button');
-            btn.className = "delete-btn";
-            btn.dataset.id = mov.id || "";
-            btn.title = "Eliminar movimiento";
-            btn.innerHTML = '<svg><use href="#trash"></use></svg>';
-            actionTd.appendChild(btn);
+            if (isQueuedMovement) {
+                const pendingBadge = document.createElement('span');
+                pendingBadge.textContent = 'En cola';
+                pendingBadge.title = 'Este movimiento se enviará a Supabase cuando vuelva la conexión';
+                actionTd.appendChild(pendingBadge);
+            } else {
+                const btn = document.createElement('button');
+                btn.className = "delete-btn";
+                btn.dataset.id = mov.id || "";
+                btn.title = "Eliminar movimiento";
+                btn.innerHTML = '<svg><use href="#trash"></use></svg>';
+                actionTd.appendChild(btn);
+            }
             row.appendChild(actionTd);
 
             fragment.appendChild(row);
@@ -871,18 +1232,61 @@ document.addEventListener('DOMContentLoaded', () => {
             ? document.getElementById('categoria-ingreso').value
             : document.getElementById('categoria-gasto').value;
 
+        if (currentOcrAnalysis?.confidenceScore < 45 && attachedFile.base64) {
+            const proceed = confirm('La confianza del OCR es baja (' + currentOcrAnalysis.confidenceScore + '%). ¿Estás seguro de que los datos son correctos y quieres guardar?');
+            if (!proceed) {
+                toggleButtonLoading(false);
+                return;
+            }
+        }
+
+        let urlPdf = null;
+        const pendingItem = activePendingId ? pendingItems.find(p => p.id === activePendingId) : null;
+
+        const movimientoData = {
+            tipo: tipo,
+            fecha: document.getElementById('fecha').value,
+            concepto: document.getElementById('concepto').value,
+            categoria: categoria,
+            importe: document.getElementById('importe').value,
+            observaciones: document.getElementById('observaciones').value,
+            tipo_documento: docTypeSelect.value,
+            ocr_detectado: ocrStatus.textContent,
+            url_pdf: null
+        };
+
+        const finishLocalSubmit = async (successMessage) => {
+            if (activePendingId) {
+                pendingItems = pendingItems.filter(p => p.id !== activePendingId);
+                activePendingId = null;
+                savePendingItems();
+            }
+            showToast(successMessage, 'success');
+            form.reset();
+            resetFileInput();
+            setDefaultDate();
+            toggleCategoryFields();
+            await loadPendingItems();
+        };
+
+        const queueMovementForSync = async () => {
+            const entry = enqueueSyncOperation('create-movement', {
+                movimientoData,
+                attachedFileData: attachedFile.base64 ? { ...attachedFile } : null,
+                pendingToRemoveId: activePendingId || null,
+                remotePendingId: pendingItem?.source === 'remote' ? pendingItem.remoteId : null
+            });
+            upsertQueuedMovement(entry, movimientoData);
+            await finishLocalSubmit('Movimiento guardado en cola. Se enviará a Supabase al reconectar.');
+            setOfflineBannerMessage(`Sin conexión: hay ${getOfflineQueueCount()} cambio(s) pendientes de sincronizar con Supabase.`);
+        };
+
         try {
-            if (currentOcrAnalysis?.confidenceScore < 45 && attachedFile.base64) {
-                const proceed = confirm('La confianza del OCR es baja (' + currentOcrAnalysis.confidenceScore + '%). ¿Estás seguro de que los datos son correctos y quieres guardar?');
-                if (!proceed) {
-                    toggleButtonLoading(false);
-                    return;
-                }
+            if (!navigator.onLine) {
+                await queueMovementForSync();
+                return;
             }
 
-            let urlPdf = null;
-
-            // Subir factura si existe
             if (attachedFile.base64) {
                 showToast('Subiendo factura a Supabase...', 'info');
                 urlPdf = await uploadFacturaBase64(
@@ -892,45 +1296,33 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
 
-            // Crear movimiento
-            const movimientoData = {
-                tipo: tipo,
-                fecha: document.getElementById('fecha').value,
-                concepto: document.getElementById('concepto').value,
-                categoria: categoria,
-                importe: document.getElementById('importe').value,
-                observaciones: document.getElementById('observaciones').value,
-                tipo_documento: docTypeSelect.value,
-                ocr_detectado: ocrStatus.textContent,
-                url_pdf: urlPdf
-            };
-
+            movimientoData.url_pdf = urlPdf;
             await createMovimiento(movimientoData);
 
-            // Si venía de un pendiente, marcar como validado usando el ID exacto
             if (activePendingId) {
-                const item = pendingItems.find(p => p.id === activePendingId);
-                if (item?.source === 'remote' && item.remoteId) {
+                if (pendingItem?.source === 'remote' && pendingItem.remoteId) {
                     try {
-                        await updateDocumentoPendiente(item.remoteId, { estado: 'validado' });
+                        await updateDocumentoPendiente(pendingItem.remoteId, { estado: 'validado' });
                     } catch (error) {
-                        console.warn('Error al validar pendiente remoto:', error);
+                        if (isOfflineLikeError(error)) {
+                            enqueueSyncOperation('update-pending', { remoteId: pendingItem.remoteId, changes: { estado: 'validado' } });
+                        } else {
+                            console.warn('Error al validar pendiente remoto:', error);
+                        }
                     }
                 }
-                pendingItems = pendingItems.filter(p => p.id !== activePendingId);
-                activePendingId = null;
-                savePendingItems();
             }
 
-            showToast('Movimiento guardado en Supabase', 'success');
-            form.reset();
-            resetFileInput();
-            setDefaultDate();
-            toggleCategoryFields();
+            await finishLocalSubmit('Movimiento guardado en Supabase');
             await loadMovements();
         } catch (error) {
-            console.error('Error al guardar el movimiento en Supabase:', error);
-            showToast('Error al guardar el movimiento', 'error');
+            if (isOfflineLikeError(error)) {
+                movimientoData.url_pdf = urlPdf;
+                await queueMovementForSync();
+            } else {
+                console.error('Error al guardar el movimiento en Supabase:', error);
+                showToast('Error al guardar el movimiento', 'error');
+            }
         } finally {
             toggleButtonLoading(false);
         }
@@ -945,17 +1337,38 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast('Error: Movimiento sin ID.', 'error');
             return;
         }
-        if (!confirm('¿Estás seguro de que quieres eliminar este movimiento de Supabase? Esta acción no se puede deshacer.')) return;
+        if (!confirm('¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.')) return;
         deleteButton.disabled = true;
+
+        const numericId = parseInt(id, 10);
+        const queueDeleteAndRemoveLocally = () => {
+            enqueueSyncOperation('delete-movement', { remoteId: numericId });
+            allMovements = allMovements.filter(mov => mov.id !== numericId);
+            saveMovementCache(allMovements);
+            renderTable();
+            setOfflineBannerMessage(`Sin conexión: hay ${getOfflineQueueCount()} cambio(s) pendientes de sincronizar con Supabase.`);
+            showToast('Movimiento eliminado en local y añadido a la cola de sincronización.', 'info');
+        };
+
         try {
-            await deleteMovimiento(parseInt(id));
-            allMovements = allMovements.filter(mov => mov.id !== parseInt(id));
+            if (!navigator.onLine) {
+                queueDeleteAndRemoveLocally();
+                return;
+            }
+
+            await deleteMovimiento(numericId);
+            allMovements = allMovements.filter(mov => mov.id !== numericId);
+            saveMovementCache(allMovements);
             renderTable();
             showToast('Movimiento eliminado correctamente', 'success');
         } catch (error) {
-            console.error('Error al eliminar el movimiento de Supabase:', error);
-            showToast('No se pudo eliminar el movimiento.', 'error');
-            deleteButton.disabled = false;
+            if (isOfflineLikeError(error)) {
+                queueDeleteAndRemoveLocally();
+            } else {
+                console.error('Error al eliminar el movimiento de Supabase:', error);
+                showToast('No se pudo eliminar el movimiento.', 'error');
+                deleteButton.disabled = false;
+            }
         }
     };
 
@@ -1580,6 +1993,21 @@ document.addEventListener('DOMContentLoaded', () => {
             tr.appendChild(td);
             tableBody.appendChild(tr);
         }
+    };
+
+    window.__gestionDebug = {
+        getOfflineQueue,
+        getOfflineQueueCount,
+        processSyncQueue,
+        runOfflineQueueSelfTest,
+        loadPendingItems,
+        loadMovements,
+        readPendingStorage: () => readStoredArray(PENDING_STORAGE_KEY),
+        readMovementCache: () => loadMovementCache(),
+        clearOfflineQueue: () => saveOfflineQueue([]),
+        clearPendingStorage: () => writeStoredArray(PENDING_STORAGE_KEY, []),
+        clearMovementCache: () => saveMovementCache([]),
+        enqueueSyncOperation
     };
 
     // --- INICIAR LA APP ---

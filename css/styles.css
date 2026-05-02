@@ -70,6 +70,30 @@ header h1 {
     letter-spacing: -0.5px;
 }
 
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+}
+
+.header-install-button {
+    width: auto;
+    min-width: 140px;
+    padding: .7rem 1rem;
+    font-size: .95rem;
+    white-space: nowrap;
+}
+
+.offline-status {
+    margin: -1rem 0 1.5rem;
+    padding: .85rem 1rem;
+    border: 1px solid #ffecb5;
+    border-radius: 8px;
+    background: #fff3cd;
+    color: #664d03;
+    font-weight: 500;
+}
+
 /* --- THEME TOGGLE (MODO OSCURO/CLARO) --- */
 .theme-toggle {
     position: relative;
@@ -836,6 +860,21 @@ tbody tr:hover {
 
 /* --- RESPONSIVE --- */
 @media (max-width:768px) {
+    header {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+
+    .header-actions {
+        justify-content: space-between;
+    }
+
+    .header-install-button {
+        flex: 1;
+        min-width: 0;
+    }
+
     .dashboard-grid {
         grid-template-columns: 1fr;
     }

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#8b5e3c">
+    <title>Sin conexión - Gestión Financiera</title>
+    <style>
+        :root {
+            --bg: #f7f4ef;
+            --card: #ffffff;
+            --text: #2f2a24;
+            --accent: #8b5e3c;
+            --muted: #6f6256;
+            --border: #e8dccf;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            padding: 24px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(180deg, #fbf7f1 0%, #f1e7db 100%);
+            color: var(--text);
+        }
+        .card {
+            max-width: 560px;
+            width: 100%;
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 16px 40px rgba(72, 45, 20, 0.12);
+            padding: 28px;
+        }
+        h1 {
+            margin: 0 0 12px;
+            color: var(--accent);
+            font-size: 1.9rem;
+        }
+        p {
+            margin: 0 0 12px;
+            line-height: 1.6;
+            color: var(--muted);
+        }
+        ul {
+            margin: 18px 0 0 20px;
+            color: var(--muted);
+            line-height: 1.6;
+        }
+        .actions {
+            margin-top: 22px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .button {
+            border: none;
+            border-radius: 10px;
+            padding: 12px 18px;
+            font-weight: 700;
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .button-primary {
+            background: var(--accent);
+            color: #fff;
+        }
+        .button-secondary {
+            background: #f5efe7;
+            color: var(--text);
+            border: 1px solid var(--border);
+        }
+    </style>
+</head>
+<body>
+    <main class="card">
+        <h1>Estás sin conexión</h1>
+        <p>La aplicación se ha abierto en modo offline, pero algunas funciones dependen de Internet y de Supabase.</p>
+        <p>Mientras no vuelva la conexión, podrás seguir usando la interfaz y revisar lo que ya estuviera cacheado.</p>
+        <ul>
+            <li>Si faltan movimientos o pendientes, recarga cuando vuelva Internet.</li>
+            <li>Las consultas en vivo a Supabase no funcionarán offline.</li>
+            <li>La instalación como app sigue disponible cuando el navegador lo permita.</li>
+        </ul>
+        <div class="actions">
+            <button class="button button-primary" type="button" onclick="location.href='./index.html'">Reintentar</button>
+            <button class="button button-secondary" type="button" onclick="history.back()">Volver</button>
+        </div>
+    </main>
+</body>
+</html>

@@ -6,7 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#8b5e3c">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="manifest" href="./manifest.json">
     <link rel="icon" type="image/png" href="./assets/icon-192.png">
@@ -47,16 +46,25 @@
     <div class="container">
         <header>
             <h1>Gestión Financiera – Dpto. Madera</h1>
-            <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema (oscuro/claro)">
-                <svg class="icon-sun">
-                    <use href="#sun"></use>
-                </svg>
-                <svg class="icon-moon">
-                    <use href="#moon"></use>
-                </svg>
-                <div class="toggle-ball"></div>
-            </button>
+            <div class="header-actions">
+                <button id="install-app-button" class="secondary-action-button header-install-button hidden" type="button">
+                    Instalar app
+                </button>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema (oscuro/claro)">
+                    <svg class="icon-sun">
+                        <use href="#sun"></use>
+                    </svg>
+                    <svg class="icon-moon">
+                        <use href="#moon"></use>
+                    </svg>
+                    <div class="toggle-ball"></div>
+                </button>
+            </div>
         </header>
+
+        <div id="offline-status" class="offline-status hidden" aria-live="polite">
+            Estás sin conexión. La app seguirá funcionando con lo ya cargado, pero los datos nuevos de Supabase no estarán disponibles hasta que vuelva Internet.
+        </div>
 
         <section class="dashboard-grid">
             <div class="stat-card stat-balance">
@@ -289,6 +297,50 @@
                 document.body.prepend(warning);
             }
         })();
+
+        const installAppButton = document.getElementById('install-app-button');
+        const offlineStatus = document.getElementById('offline-status');
+        let deferredInstallPrompt = null;
+
+        function updateConnectivityUI() {
+            if (!offlineStatus) return;
+            offlineStatus.classList.toggle('hidden', navigator.onLine);
+        }
+
+        function setInstallButtonVisibility(visible) {
+            if (!installAppButton) return;
+            installAppButton.classList.toggle('hidden', !visible);
+        }
+
+        window.addEventListener('beforeinstallprompt', (event) => {
+            event.preventDefault();
+            deferredInstallPrompt = event;
+            setInstallButtonVisibility(true);
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredInstallPrompt = null;
+            setInstallButtonVisibility(false);
+            console.log('PWA instalada correctamente');
+        });
+
+        installAppButton?.addEventListener('click', async () => {
+            if (!deferredInstallPrompt) return;
+            deferredInstallPrompt.prompt();
+            const choice = await deferredInstallPrompt.userChoice;
+            console.log('Resultado instalación PWA:', choice?.outcome || 'sin dato');
+            if (choice?.outcome !== 'accepted') {
+                setInstallButtonVisibility(true);
+                return;
+            }
+            deferredInstallPrompt = null;
+            setInstallButtonVisibility(false);
+        });
+
+        window.addEventListener('online', updateConnectivityUI);
+        window.addEventListener('offline', updateConnectivityUI);
+        updateConnectivityUI();
+
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 if (location.protocol === 'http:' || location.protocol === 'https:') {
@@ -301,4 +353,3 @@
     </script>
 </body>
 </html>
-
