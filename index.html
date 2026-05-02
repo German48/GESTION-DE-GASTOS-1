@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#8b5e3c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" type="image/png" href="./assets/icon-192.png">
+    <link rel="apple-touch-icon" href="./assets/icon-192.png">
+    <title>Gestión Financiera - Madera</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src='https://unpkg.com/tesseract.js@5.0.0/dist/tesseract.min.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+</head>
+
+<body>
+    <!-- Iconos SVG -->
+    <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+        <symbol id="sun" viewBox="0 0 24 24">
+            <path fill="currentColor"
+                d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.64 5.64c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l1.06 1.06c.39.39 1.02.39 1.41 0s.39-1.02 0-1.41L5.64 5.64zm12.73 12.73c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l1.06 1.06c.39.39 1.02.39 1.41 0 .39-.39.39-1.02 0-1.41l-1.06-1.06zM18.36 5.64l-1.06 1.06c-.39-.39-.39 1.02 0 1.41s1.02.39 1.41 0l1.06-1.06c.39-.39.39-1.02 0-1.41-.39-.39-1.02-.39-1.41 0zM6.71 18.36l-1.06-1.06c-.39-.39-1.02-.39-1.41 0-.39.39-.39 1.02 0 1.41l1.06 1.06c.39.39 1.02.39 1.41 0s.39-1.02 0-1.41z" />
+        </symbol>
+        <symbol id="moon" viewBox="0 0 24 24">
+            <path fill="currentColor"
+                d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.62-.14 2.37-.38-.42-.6-.62-1.28-.62-2.02 0-1.93 1.57-3.5 3.5-3.5.74 0 1.42.2 2.02.62.24-.75.38-1.54.38-2.37 0-4.97-4.03-9-9-9z" />
+        </symbol>
+        <symbol id="camera" viewBox="0 0 24 24">
+            <path fill="currentColor"
+                d="M9.4 16.6 4.8 12l-1.4 1.4L9.4 19.4l12-12-1.4-1.4-10.6 10.6zM21 5h-3.17L16 3H8L6.17 5H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 13c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5z" />
+        </symbol>
+        <symbol id="link" viewBox="0 0 24 24">
+            <path fill="currentColor"
+                d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z" />
+        </symbol>
+        <symbol id="trash" viewBox="0 0 24 24">
+            <path fill="currentColor"
+                d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+        </symbol>
+    </svg>
+
+    <div class="container">
+        <header>
+            <h1>Gestión Financiera – Dpto. Madera</h1>
+            <button id="theme-toggle" class="theme-toggle" aria-label="Cambiar tema (oscuro/claro)">
+                <svg class="icon-sun">
+                    <use href="#sun"></use>
+                </svg>
+                <svg class="icon-moon">
+                    <use href="#moon"></use>
+                </svg>
+                <div class="toggle-ball"></div>
+            </button>
+        </header>
+
+        <section class="dashboard-grid">
+            <div class="stat-card stat-balance">
+                <span class="stat-label">Balance Actual</span>
+                <span id="dash-balance" class="stat-value">0.00 €</span>
+            </div>
+            <div class="stat-card stat-income">
+                <span class="stat-label">Total Ingresos</span>
+                <span id="dash-ingresos" class="stat-value">0.00 €</span>
+            </div>
+            <div class="stat-card stat-expense">
+                <span class="stat-label">Total Gastos</span>
+                <span id="dash-gastos" class="stat-value">0.00 €</span>
+            </div>
+        </section>
+
+        <main class="card">
+            <h2>Registrar Nuevo Movimiento</h2>
+            <form id="expense-form">
+                <div class="form-group-radio">
+                    <legend>Tipo de Movimiento:</legend>
+                    <div>
+                        <input type="radio" id="tipo-gasto" name="tipo" value="Gasto" checked>
+                        <label for="tipo-gasto">Gasto</label>
+                    </div>
+                    <div>
+                        <input type="radio" id="tipo-ingreso" name="tipo" value="Ingreso">
+                        <label for="tipo-ingreso">Ingreso</label>
+                    </div>
+                </div>
+
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label for="doc-type">Tipo de documento</label>
+                        <select id="doc-type">
+                            <option value="Factura">Factura</option>
+                            <option value="Ticket">Ticket</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="ocr-mode">Modo OCR</label>
+                        <select id="ocr-mode">
+                            <option value="local">Local (Tesseract)</option>
+                            <option value="external">Externo (API)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="fecha">Fecha</label>
+                        <input type="date" id="fecha" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="importe">Importe (€)</label>
+                        <input type="number" id="importe" step="0.01" required placeholder="0.00">
+                    </div>
+                    <div class="form-group full-width">
+                        <label for="concepto">Concepto / Cliente / Proveedor</label>
+                        <input type="text" id="concepto" required
+                            placeholder="Ej: Venta de mueble, Compra de tornillos">
+                        <div id="provider-suggestion" class="helper-chip hidden"></div>
+                    </div>
+
+                    <div class="form-group" id="categoria-gasto-group">
+                        <label for="categoria-gasto">Categoría de Gasto</label>
+                        <select id="categoria-gasto">
+                            <option value="Material">Material</option>
+                            <option value="Herramienta">Herramienta</option>
+                            <option value="Mantenimiento">Mantenimiento</option>
+                            <option value="Transporte">Transporte</option>
+                            <option value="Formacion">Formación</option>
+                            <option value="Otros Gastos">Otros Gastos</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group hidden" id="categoria-ingreso-group">
+                        <label for="categoria-ingreso">Categoría de Ingreso</label>
+                        <select id="categoria-ingreso">
+                            <option value="Venta Producto">Venta Producto</option>
+                            <option value="Servicios">Servicios</option>
+                            <option value="Otros Ingresos">Otros Ingresos</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="observaciones">Observaciones</label>
+                        <input type="text" id="observaciones" placeholder="Opcional">
+                    </div>
+                </div>
+
+                <div class="file-upload-area">
+                    <div class="file-actions">
+                        <label for="factura-file" class="file-label">
+                            <svg>
+                                <use href="#link"></use>
+                            </svg>
+                            Subir archivo
+                        </label>
+                        <label for="factura-camera" class="file-label file-label-primary">
+                            <svg>
+                                <use href="#camera"></use>
+                            </svg>
+                            Hacer foto
+                        </label>
+                    </div>
+                    <input type="file" id="factura-file" accept="image/*">
+                    <input type="file" id="factura-camera" accept="image/*" capture="environment">
+                    <div id="preview-container" class="hidden">
+                        <img id="thumbnail" src="#" alt="Miniatura">
+                        <span id="ocr-status"></span>
+                    </div>
+                </div>
+
+                <section id="review-panel" class="review-panel hidden" aria-live="polite">
+                    <div class="review-header">
+                        <h3>Revisión inteligente del documento</h3>
+                        <span id="ocr-confidence" class="review-badge review-badge-neutral">Sin analizar</span>
+                    </div>
+                    <div class="review-grid">
+                        <div class="review-box">
+                            <div class="review-label">Proveedor sugerido</div>
+                            <div id="review-provider" class="review-value selectable-prediction" title="Haz clic para aplicar este proveedor">—</div>
+                        </div>
+                        <div class="review-box">
+                            <div class="review-label">Tipo detectado</div>
+                            <div id="review-doc-type" class="review-value">—</div>
+                        </div>
+                        <div class="review-box">
+                            <div class="review-label">Nº factura</div>
+                            <div id="review-invoice-number" class="review-value">—</div>
+                        </div>
+                        <div class="review-box">
+                            <div class="review-label">Riesgo de duplicado</div>
+                            <div id="review-duplicate" class="review-value">—</div>
+                        </div>
+                    </div>
+                    <div class="review-warnings-wrap">
+                        <div class="review-label">Avisos</div>
+                        <ul id="review-warnings" class="review-warnings">
+                            <li>Sin avisos.</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <div class="form-actions-row">
+                    <button type="button" id="save-pending-button" class="secondary-action-button">Guardar como pendiente</button>
+                    <button type="submit" id="save-button">
+                        <span class="btn-text">Guardar Movimiento</span>
+                        <span class="loader hidden"></span>
+                    </button>
+                </div>
+            </form>
+        </main>
+
+        <section class="card">
+            <h2>Pendientes de revisión</h2>
+            <p class="section-intro">Documentos guardados para revisar antes de validarlos definitivamente.</p>
+            <div id="pending-empty" class="empty-state">No hay documentos pendientes.</div>
+            <div id="pending-list" class="pending-list"></div>
+        </section>
+
+        <section class="card">
+            <h2>Histórico de Movimientos</h2>
+            <div class="filters">
+                <input type="month" id="filter-month">
+                <select id="filter-category">
+                    <option value="">Todas las categorías</option>
+                    <optgroup label="Gastos">
+                        <option value="Material">Material</option>
+                        <option value="Herramienta">Herramienta</option>
+                        <option value="Mantenimiento">Mantenimiento</option>
+                        <option value="Transporte">Transporte</option>
+                        <option value="Formacion">Formación</option>
+                        <option value="Otros Gastos">Otros Gastos</option>
+                    </optgroup>
+                    <optgroup label="Ingresos">
+                        <option value="Venta Producto">Venta Producto</option>
+                        <option value="Servicios">Servicios</option>
+                        <option value="Otros Ingresos">Otros Ingresos</option>
+                    </optgroup>
+                </select>
+                <input type="text" id="filter-provider" placeholder="Filtrar por concepto...">
+                <div class="export-actions">
+                    <button type="button" id="export-csv" class="file-label">Exportar CSV</button>
+                    <button type="button" id="export-pdf" class="file-label btn-pdf">Exportar PDF</button>
+                </div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Concepto</th>
+                            <th>Tipo</th>
+                            <th>Categoría</th>
+                            <th>Documento</th>
+                            <th>Importe (€)</th>
+                            <th class="actions-col">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="expenses-table-body"></tbody>
+                </table>
+            </div>
+
+            <div class="pagination" id="pagination-controls">
+                <button id="prev-page" disabled>&laquo; Anterior</button>
+                <span id="page-info" class="pagination-info">Página 1 de 1</span>
+                <button id="next-page" disabled>Siguiente &raquo;</button>
+            </div>
+
+            <div class="summary">
+                <div>Total Ingresos: <span id="total-ingresos" class="monto-ingreso">0.00</span> €</div>
+                <div>Total Gastos: <span id="total-gastos" class="monto-gasto">0.00</span> €</div>
+                <div id="balance-total">Balance: <span id="balance">0.00</span> €</div>
+            </div>
+        </section>
+    </div>
+
+    <div id="toast-container" class="toast-container"></div>
+
+    <script type="module" src="js/supabase-config.js"></script>
+    <script type="module" src="js/supabase-client.js"></script>
+    <script type="module" src="js/ocr-external-config.js"></script>
+    <script type="module" src="js/script.js"></script>
+    <script>
+        (function () {
+            if (location.protocol === 'file:') {
+                const warning = document.createElement('div');
+                warning.style.cssText = 'background:#fff3cd;color:#664d03;border:1px solid #ffecb5;padding:12px 16px;margin:12px;border-radius:8px;font-family:system-ui, -apple-system, Segoe UI, sans-serif;';
+                warning.innerHTML = 'Esta app no puede ejecutarse con <code>file://</code>. Inicia un servidor local en esta carpeta y abre <code>http://localhost:8000</code>.';
+                document.body.prepend(warning);
+            }
+        })();
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                if (location.protocol === 'http:' || location.protocol === 'https:') {
+                    navigator.serviceWorker.register('./sw.js')
+                        .then(reg => console.log('Service Worker registrado:', reg))
+                        .catch(err => console.warn('Error al registrar Service Worker:', err));
+                }
+            });
+        }
+    </script>
+</body>
+</html>
