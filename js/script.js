@@ -1184,10 +1184,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
 
         const reader = new FileReader();
-        reader.onload = async (event) => {
+        reader.onload = async (e) => {
             try {
-                let text = event.target.result;
-                // Eliminar BOM de UTF-8 si está presente
+                const arrayBuffer = e.target.result;
+                let text = new TextDecoder('utf-8').decode(arrayBuffer);
+                
+                // Si contiene caracteres de reemplazo (como ), intentar con windows-1252
+                if (text.includes('')) {
+                    text = new TextDecoder('windows-1252').decode(arrayBuffer);
+                }
+
                 if (text.startsWith('\uFEFF')) {
                     text = text.substring(1);
                 }
@@ -1198,68 +1204,69 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                // Detectar separador (punto y coma o coma)
                 const firstLine = lines[0];
                 const separator = firstLine.includes(';') ? ';' : ',';
-                
-                // Normalizar cabeceras: quitar espacios, comillas y limpiar nombres
                 const headers = firstLine.split(separator).map(h => h.replace(/^"|"$/g, '').trim());
                 const rows = lines.slice(1);
 
                 const newMovements = [];
 
+                const normalizeDate = (dateStr) => {
+                    if (!dateStr) return '';
+                    const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                    if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+                    const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+                    if (dmy) {
+                        const d = dmy[1].padStart(2, '0');
+                        const m = dmy[2].padStart(2, '0');
+                        let y = dmy[3];
+                        if (y.length === 2) y = '20' + y;
+                        return `${d}/${m}/${y}`;
+                    }
+                    return dateStr;
+                };
+
                 rows.forEach(line => {
                     const values = [];
                     let current = '';
                     let inQuotes = false;
-                    
-                    // Parser básico para CSV con soporte de comillas
                     for (let i = 0; i < line.length; i++) {
                         const char = line[i];
                         if (char === '"') {
-                            if (inQuotes && line[i+1] === '"') {
-                                current += '"';
-                                i++;
-                            } else {
-                                inQuotes = !inQuotes;
-                            }
+                            if (inQuotes && line[i+1] === '"') { i++; current += '"'; }
+                            else { inQuotes = !inQuotes; }
                         } else if (char === separator && !inQuotes) {
                             values.push(current.trim());
                             current = '';
-                        } else {
-                            current += char;
-                        }
+                        } else { current += char; }
                     }
                     values.push(current.trim());
 
                     const rowData = {};
                     headers.forEach((header, index) => {
                         const val = values[index];
-                        rowData[header] = (val !== undefined) ? val.replace(/^"|"$/g, '').trim() : '';
+                        rowData[header.toLowerCase()] = (val !== undefined) ? val.replace(/^"|"$/g, '').trim() : '';
                     });
 
-                    // Helper para obtener valor de cabeceras parecidas (tolerancia a mayúsculas/minúsculas)
                     const getVal = (possibleKeys) => {
-                        const keys = Object.keys(rowData);
-                        const match = keys.find(k => possibleKeys.some(p => k.toLowerCase() === p.toLowerCase()));
-                        return match ? rowData[match] : '';
+                        const match = possibleKeys.find(k => rowData[k.toLowerCase()] !== undefined);
+                        return match ? rowData[match.toLowerCase()] : '';
                     };
 
-                    const fecha = getVal(['Fecha', 'Date']);
+                    const fechaRaw = getVal(['Fecha', 'Date']);
                     const importeRaw = getVal(['Importe', 'Amount', 'Monto']);
 
-                    if (fecha && importeRaw) {
-                        // Limpiar importe: quitar símbolos de moneda y manejar decimales europeos/americanos
+                    if (fechaRaw && importeRaw) {
                         const cleanImporte = importeRaw.replace(/[€$£\s]/g, '').replace(',', '.');
                         const importeNum = parseFloat(cleanImporte);
 
                         if (!isNaN(importeNum)) {
+                            const fechaNorm = normalizeDate(fechaRaw);
                             newMovements.push({
-                                id: `imported-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                                 Timestamp: new Date().toISOString(),
                                 Tipo: getVal(['Tipo', 'Type']) || (importeNum < 0 ? 'Gasto' : 'Ingreso'),
-                                Fecha: fecha,
-                                Concepto: getVal(['Concepto', 'Concept', 'Description', 'Proveedor']),
+                                Fecha: fechaNorm,
+                                Concepto: getVal(['Concepto', 'Concept', 'Description', 'Proveedor', 'Documento']),
                                 Categoría: getVal(['Categoría', 'Categoria', 'Category', 'Clase']),
                                 Importe: Math.abs(importeNum),
                                 Observaciones: getVal(['Observaciones', 'Notes', 'Comentarios']),
@@ -1272,11 +1279,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
 
                 if (newMovements.length > 0) {
-                    // Filtrar duplicados: comparamos con el estado actual usando un set de llaves únicas
                     const existingKeys = new Set(
                         (allMovements || [])
                             .filter(m => m && m.Fecha)
-                            .map(m => `${m.Fecha}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`)
+                            .map(m => `${normalizeDate(m.Fecha)}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`)
                     );
 
                     const uniqueNewMovements = newMovements.filter(m => {
@@ -1285,23 +1291,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
 
                     if (uniqueNewMovements.length > 0) {
+                        uniqueNewMovements.forEach(mov => {
+                            const entry = enqueueSyncOperation('create-movement', {
+                                movimientoData: {
+                                    fecha: mov.Fecha.split('/').reverse().join('-'),
+                                    concepto: mov.Concepto,
+                                    tipo: mov.Tipo,
+                                    categoria: mov.Categoría,
+                                    importe: mov.Importe,
+                                    observaciones: mov.Observaciones,
+                                    tipo_documento: mov['Tipo Documento'],
+                                    url_documento: mov['URL PDF'],
+                                    ocr_detectado: mov['OCR Detectado']
+                                }
+                            });
+                            mov._queued = true;
+                            mov._queueId = entry.id;
+                        });
+
                         allMovements = [...uniqueNewMovements, ...allMovements];
                         saveMovementCache(allMovements);
                         renderTable();
                         showToast(`Se importaron ${uniqueNewMovements.length} movimientos nuevos con éxito.`, 'success');
+                        if (navigator.onLine) processSyncQueue();
                     } else {
                         showToast('Todos los movimientos del archivo ya estaban registrados.', 'info');
                     }
                 } else {
-                    showToast('No se detectaron movimientos válidos. Verifica las columnas "Fecha" e "Importe".', 'warning');
+                    showToast('No se detectaron movimientos válidos.', 'warning');
                 }
             } catch (err) {
-                console.error('Error detallado en importación:', err);
-                showToast('Error crítico al procesar el CSV. Revisa el formato del archivo.', 'error');
+                console.error('Error en importación:', err);
+                showToast('Error al procesar el CSV.', 'error');
             }
             e.target.value = '';
         };
-        reader.readAsText(file);
+        reader.readAsArrayBuffer(file);
     };
 
     const handleExportPDF = () => {
