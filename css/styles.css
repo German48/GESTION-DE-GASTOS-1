@@ -706,6 +706,19 @@ tbody tr:hover {
     height: 20px
 }
 
+.badge-historico {
+    display: inline-block;
+    font-size: .7rem;
+    font-weight: 600;
+    padding: .15rem .45rem;
+    border-radius: 4px;
+    background: var(--badge-historico-bg, #e8f4fd);
+    color: var(--badge-historico-color, #1a6fa4);
+    border: 1px solid var(--badge-historico-border, #90caf9);
+    white-space: nowrap;
+    cursor: default;
+}
+
 /* --- NOTIFICACIONES TOAST --- */
 .toast-container {
     position: fixed;
