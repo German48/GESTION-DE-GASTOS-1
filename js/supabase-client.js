@@ -93,6 +93,51 @@ const buildSupabaseError = (error, operation) => {
     return appError;
 };
 
+const buildRestUrl = (table, query = {}) => {
+    const url = new URL(`/rest/v1/${table}`, SUPABASE_URL);
+
+    Object.entries(query).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+            url.searchParams.set(key, value);
+        }
+    });
+
+    return url.toString();
+};
+
+const restRequest = async (table, {
+    method = 'GET',
+    query = {},
+    body,
+    prefer,
+    headers = {}
+} = {}) => {
+    try {
+        const response = await fetch(buildRestUrl(table, query), {
+            method,
+            headers: {
+                apikey: SUPABASE_ANON_KEY,
+                Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+                ...headers,
+                ...(prefer ? { Prefer: prefer } : {})
+            },
+            body: body === undefined ? undefined : JSON.stringify(body)
+        });
+
+        const text = await response.text();
+        const payload = text ? JSON.parse(text) : null;
+
+        if (!response.ok) {
+            throw payload || { message: text || `HTTP ${response.status}`, status: response.status };
+        }
+
+        return payload;
+    } catch (error) {
+        throw buildSupabaseError(error, 'consultar la API REST de Supabase');
+    }
+};
+
 /**
  * Inicializar el cliente de Supabase.
  * Requiere que la librería de Supabase esté presente en el ámbito global (window.supabase).
@@ -114,30 +159,27 @@ export function initSupabase() {
  * @returns {Promise<Array>} Lista de movimientos
  */
 export async function getMovimientos(filters = {}) {
-    let query = supabase
-        .from(MOVIMIENTOS_TABLE)
-        .select(MOVIMIENTOS_SELECT)
-        .order('fecha', { ascending: false });
+    const query = {
+        select: MOVIMIENTOS_SELECT,
+        order: 'fecha.desc'
+    };
 
-    // Aplicar solo filtros compatibles con el esquema actual.
     if (filters.month) {
         const [year, month] = filters.month.split('-');
         const startDate = `${year}-${month}-01`;
         const endDate = new Date(year, month, 0).toISOString().split('T')[0];
-        query = query.gte('fecha', startDate).lte('fecha', endDate);
+        query.and = `(fecha.gte.${startDate},fecha.lte.${endDate})`;
     }
 
     if (filters.concepto) {
-        query = query.ilike('concepto', `%${filters.concepto}%`);
+        query.concepto = `ilike.*${String(filters.concepto).replace(/\*/g, '')}*`;
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-        throw buildSupabaseError(error, 'obtener los movimientos');
+    try {
+        return await restRequest(MOVIMIENTOS_TABLE, { query });
+    } catch (error) {
+        throw buildSupabaseError(error?.cause || error, 'obtener los movimientos');
     }
-
-    return data;
 }
 
 /**
@@ -159,19 +201,18 @@ export async function createMovimiento(movimiento) {
     let lastError = null;
 
     for (const payload of payloadVariants) {
-        const { data, error } = await supabase
-            .from(MOVIMIENTOS_TABLE)
-            .insert([payload])
-            .select(MOVIMIENTOS_SELECT)
-            .single();
-
-        if (!error) {
-            return data;
-        }
-
-        lastError = error;
-        if (!isSchemaMismatchError(error)) {
-            break;
+        try {
+            const data = await restRequest(MOVIMIENTOS_TABLE, {
+                method: 'POST',
+                body: payload,
+                prefer: 'return=representation'
+            });
+            return Array.isArray(data) ? data[0] : data;
+        } catch (error) {
+            lastError = error?.cause || error;
+            if (!isSchemaMismatchError(lastError)) {
+                break;
+            }
         }
     }
 
@@ -184,13 +225,13 @@ export async function createMovimiento(movimiento) {
  * @returns {Promise<boolean>} True si se eliminó correctamente
  */
 export async function deleteMovimiento(id) {
-    const { error } = await supabase
-        .from(MOVIMIENTOS_TABLE)
-        .delete()
-        .eq('id', id);
-
-    if (error) {
-        throw buildSupabaseError(error, 'eliminar el movimiento');
+    try {
+        await restRequest(MOVIMIENTOS_TABLE, {
+            method: 'DELETE',
+            query: { id: `eq.${id}` }
+        });
+    } catch (error) {
+        throw buildSupabaseError(error?.cause || error, 'eliminar el movimiento');
     }
 
     return true;
@@ -330,16 +371,24 @@ export async function deleteFactura(fileName) {
  * @returns {Promise<Object>} Estadísticas (total ingresos, gastos, balance)
  */
 export async function getEstadisticas() {
-    const { data, error } = await supabase
-        .from(MOVIMIENTOS_TABLE)
-        .select('importe');
-
-    if (error) {
-        throw buildSupabaseError(error, 'obtener las estadísticas');
+    let data;
+    try {
+        data = await restRequest(MOVIMIENTOS_TABLE, {
+            query: { select: 'importe,tipo' }
+        });
+    } catch (error) {
+        throw buildSupabaseError(error?.cause || error, 'obtener las estadísticas');
     }
 
     const stats = data.reduce((acc, mov) => {
-        acc.totalGastos += Number(mov.importe || 0);
+        const importe = Number(mov.importe || 0);
+        const tipo = String(mov.tipo || '').toLowerCase();
+
+        if (tipo === 'ingreso') {
+            acc.totalIngresos += importe;
+        } else {
+            acc.totalGastos += importe;
+        }
         return acc;
     }, { totalIngresos: 0, totalGastos: 0 });
 
