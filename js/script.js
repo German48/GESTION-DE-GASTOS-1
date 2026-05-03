@@ -445,6 +445,34 @@ document.addEventListener('DOMContentLoaded', () => {
         normalizeMovementAmount(importe)
     ].join('|');
 
+    const mergeSeedMovements = (supabaseMovements, seedMovements) => {
+        if (!seedMovements || !seedMovements.length) return supabaseMovements;
+        const supabaseKeys = new Set(
+            supabaseMovements.map(mov => buildMovementCompositeKey({
+                fecha: mov.Fecha,
+                concepto: mov.Concepto,
+                importe: mov.Importe
+            }))
+        );
+        const missing = seedMovements
+            .filter(mov => {
+                const key = buildMovementCompositeKey({
+                    fecha: mov.Fecha,
+                    concepto: mov.Concepto,
+                    importe: mov.Importe
+                });
+                return !supabaseKeys.has(key);
+            })
+            .map((mov, idx) => ({ ...mov, id: mov.id != null ? mov.id : -(idx + 1), _seeded: true }));
+        const merged = [...supabaseMovements, ...missing];
+        merged.sort((a, b) => {
+            const da = normalizeMovementDate(a.Fecha) || normalizeMovementDate(a.Timestamp) || '';
+            const db = normalizeMovementDate(b.Fecha) || normalizeMovementDate(b.Timestamp) || '';
+            return db.localeCompare(da);
+        });
+        return merged;
+    };
+
     const parseCsvLine = (line) => {
         const values = [];
         let current = '';
@@ -1100,7 +1128,8 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleLoading(true, 'Cargando movimientos desde Supabase...');
         try {
             const data = await getMovimientos();
-            allMovements = await enrichMovementsWithMetadata(data.map(mapSupabaseMovement));
+            const supabaseMovements = await enrichMovementsWithMetadata(data.map(mapSupabaseMovement));
+            allMovements = mergeSeedMovements(supabaseMovements, MOVEMENTS_SEED);
             saveMovementCache(allMovements);
             renderTable();
             if (navigator.onLine && offlineStatusBanner) {
@@ -1111,12 +1140,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const cachedMovements = loadMovementCache();
             if (cachedMovements.length) {
-                allMovements = cachedMovements;
+                allMovements = mergeSeedMovements(cachedMovements, MOVEMENTS_SEED);
                 renderTable();
                 
                 const userMsg = isOfflineLikeError(error) 
-                    ? 'Sin conexión: mostrando copia local de movimientos.'
-                    : 'Supabase no responde: mostrando copia local.';
+                    ? 'Sin conexión: mostrando datos locales + históricos.'
+                    : 'Supabase no responde: mostrando datos locales + históricos.';
                 setOfflineBannerMessage(userMsg);
                 showToast(userMsg, 'info');
             } else {
@@ -1570,6 +1599,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 pendingBadge.textContent = 'En cola';
                 pendingBadge.title = 'Este movimiento se enviará a Supabase cuando vuelva la conexión';
                 actionTd.appendChild(pendingBadge);
+            } else if (mov._seeded) {
+                const histBadge = document.createElement('span');
+                histBadge.className = 'badge-historico';
+                histBadge.textContent = 'Histórico';
+                histBadge.title = 'Dato histórico recuperado del archivo de respaldo';
+                actionTd.appendChild(histBadge);
             } else {
                 const btn = document.createElement('button');
                 btn.className = "delete-btn";
