@@ -1344,8 +1344,8 @@ document.addEventListener('DOMContentLoaded', () => {
                                 Categoría: getVal(['Categoría', 'Categoria', 'Category']),
                                 Importe: Math.abs(imp),
                                 Observaciones: getVal(['Observaciones', 'Notes']),
-                                'Tipo Documento': getVal(['Tipo Documento', 'DocType']) || 'Factura',
-                                'URL PDF': getVal(['URL PDF', 'URL Documento']),
+                                'Tipo Documento': getVal(['Tipo Documento', 'Documento', 'DocType']) || '',
+                                'URL PDF': getVal(['URL PDF', 'URL Documento', 'URL_Documento']),
                                 'OCR Detectado': 'Importado CSV'
                             });
                         }
