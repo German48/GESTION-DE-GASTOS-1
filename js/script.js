@@ -388,7 +388,133 @@ document.addEventListener('DOMContentLoaded', () => {
         return cachedMovements.length ? cachedMovements : [];
     };
 
+    const CSV_METADATA_URL = './gestion-movimientos-2026-03-24.csv';
+    let movementMetadataIndexPromise = null;
+
     const firstDefinedValue = (...values) => values.find(value => value !== undefined && value !== null && value !== '');
+
+    const normalizeMovementText = (value) => String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[–—]/g, '-')
+        .replace(/\s+/g, ' ');
+
+    const normalizeMovementAmount = (value) => Number.parseFloat(value || 0).toFixed(2);
+
+    const normalizeMovementDate = (value) => {
+        if (!value) return '';
+        const text = String(value).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+        const [day, month, year] = text.split('/');
+        if (day && month && year) {
+            return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+        }
+        const parsed = new Date(text);
+        if (Number.isNaN(parsed.getTime())) return '';
+        return parsed.toISOString().slice(0, 10);
+    };
+
+    const buildMovementCompositeKey = ({ fecha, concepto, importe }) => [
+        normalizeMovementDate(fecha),
+        normalizeMovementText(concepto),
+        normalizeMovementAmount(importe)
+    ].join('|');
+
+    const parseCsvLine = (line) => {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i += 1) {
+            const char = line[i];
+            const nextChar = line[i + 1];
+
+            if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                    current += '"';
+                    i += 1;
+                } else {
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                values.push(current);
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+
+        values.push(current);
+        return values;
+    };
+
+    const loadMovementMetadataIndex = async () => {
+        if (!movementMetadataIndexPromise) {
+            movementMetadataIndexPromise = fetch(CSV_METADATA_URL, { cache: 'no-store' })
+                .then((response) => {
+                    if (!response.ok) throw new Error(`No se pudo leer ${CSV_METADATA_URL} (HTTP ${response.status})`);
+                    return response.text();
+                })
+                .then((csvText) => {
+                    const lines = csvText.replace(/^\uFEFF/, '').split(/\r?\n/).filter(Boolean);
+                    if (lines.length < 2) return new Map();
+
+                    const headers = parseCsvLine(lines[0]);
+                    const index = new Map();
+
+                    lines.slice(1).forEach((line) => {
+                        const cols = parseCsvLine(line);
+                        const row = Object.fromEntries(headers.map((header, idx) => [header, cols[idx] ?? '']));
+                        const key = buildMovementCompositeKey({
+                            fecha: row.Fecha,
+                            concepto: row.Concepto,
+                            importe: row.Importe
+                        });
+
+                        index.set(key, {
+                            Tipo: row.Tipo || '',
+                            Categoría: row.Categoría || '',
+                            Observaciones: row.Observaciones || '',
+                            'Tipo Documento': row.Documento || '',
+                            'URL PDF': row.URL_Documento || ''
+                        });
+                    });
+
+                    return index;
+                })
+                .catch((error) => {
+                    console.warn('No se pudo cargar el índice de metadatos del CSV.', error);
+                    return new Map();
+                });
+        }
+
+        return movementMetadataIndexPromise;
+    };
+
+    const enrichMovementWithMetadata = (movement, metadataIndex) => {
+        const metadata = metadataIndex.get(buildMovementCompositeKey({
+            fecha: movement.Fecha,
+            concepto: movement.Concepto,
+            importe: movement.Importe
+        }));
+
+        if (!metadata) return movement;
+
+        return {
+            ...movement,
+            Tipo: firstDefinedValue(movement.Tipo, metadata.Tipo, 'Gasto'),
+            Categoría: firstDefinedValue(movement.Categoría, metadata.Categoría, ''),
+            Observaciones: firstDefinedValue(movement.Observaciones, metadata.Observaciones, ''),
+            'Tipo Documento': firstDefinedValue(movement['Tipo Documento'], metadata['Tipo Documento'], ''),
+            'URL PDF': firstDefinedValue(movement['URL PDF'], metadata['URL PDF'], '')
+        };
+    };
+
+    const enrichMovementsWithMetadata = async (movements) => {
+        const metadataIndex = await loadMovementMetadataIndex();
+        if (!metadataIndex.size) return movements;
+        return movements.map((movement) => enrichMovementWithMetadata(movement, metadataIndex));
+    };
 
     const mapSupabaseMovement = (mov) => ({
         id: mov.id,
@@ -942,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleLoading(true, 'Cargando movimientos desde Supabase...');
         try {
             const data = await getMovimientos();
-            allMovements = data.map(mapSupabaseMovement);
+            allMovements = await enrichMovementsWithMetadata(data.map(mapSupabaseMovement));
             saveMovementCache(allMovements);
             renderTable();
             if (navigator.onLine && offlineStatusBanner) {

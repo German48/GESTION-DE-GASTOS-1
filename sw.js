@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gestion-madera-v9';
+const CACHE_NAME = 'gestion-madera-v10';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
