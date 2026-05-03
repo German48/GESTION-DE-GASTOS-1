@@ -4,7 +4,6 @@
  */
 
 import { initSupabase, getMovimientos, createMovimiento, deleteMovimiento, uploadFacturaBase64, createDocumentoPendiente, getDocumentosPendientes, updateDocumentoPendiente } from './supabase-client.js';
-import { MOVEMENTS_SEED } from './movimientos-seed.js';
 import { EXTERNAL_OCR_URL, EXTERNAL_OCR_API_KEY, EXTERNAL_OCR_TIMEOUT_MS } from './ocr-external-config.js';
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -386,34 +385,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hydrateMovementCacheFromSeed = async () => {
         const cachedMovements = loadMovementCache();
-        if (cachedMovements.length) {
-            return cachedMovements;
-        }
-
-        try {
-            const seededMovements = Array.isArray(MOVEMENTS_SEED) ? MOVEMENTS_SEED : [];
-            if (seededMovements.length) {
-                saveMovementCache(seededMovements);
-            }
-            return seededMovements;
-        } catch (error) {
-            console.warn('No se pudo hidratar la caché local de movimientos desde el seed.', error);
-            return [];
-        }
+        return cachedMovements.length ? cachedMovements : [];
     };
+
+    const firstDefinedValue = (...values) => values.find(value => value !== undefined && value !== null && value !== '');
 
     const mapSupabaseMovement = (mov) => ({
         id: mov.id,
-        Timestamp: mov.created_at || mov.updated_at || mov.fecha,
-        Tipo: mov.tipo || 'Gasto',
-        Fecha: new Date(mov.fecha).toLocaleDateString('es-ES'),
-        Concepto: mov.concepto,
-        Categoría: mov.categoria || '',
-        Importe: Number(mov.importe || 0),
-        Observaciones: mov.observaciones || '',
-        'Tipo Documento': mov.tipo_documento || '',
-        'URL PDF': mov.url_pdf || mov.url_documento || '',
-        'OCR Detectado': mov.ocr_detectado || ''
+        Timestamp: firstDefinedValue(mov.created_at, mov.updated_at, mov.fecha),
+        Tipo: firstDefinedValue(mov.tipo, 'Gasto'),
+        Fecha: mov.fecha ? new Date(mov.fecha).toLocaleDateString('es-ES') : 'Sin fecha',
+        Concepto: firstDefinedValue(mov.concepto, ''),
+        Categoría: firstDefinedValue(mov.categoria, mov['categoría'], ''),
+        Importe: Number(firstDefinedValue(mov.importe, 0) || 0),
+        Observaciones: firstDefinedValue(mov.descripcion, mov.observaciones, ''),
+        'Tipo Documento': firstDefinedValue(mov.tipo_documento, mov.tipoDocumento, ''),
+        'URL PDF': firstDefinedValue(mov.url_documento, mov.url_pdf, mov.documento_url, ''),
+        'OCR Detectado': firstDefinedValue(mov.ocr_detectado, mov.ocr_resumen, '')
     });
 
     const renderTableMessage = (message) => {

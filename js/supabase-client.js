@@ -9,6 +9,61 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, FACTURAS_BUCKET } from './supabase-con
 // Nota: Necesitas incluir la librería de Supabase en el HTML
 let supabase;
 const MOVIMIENTOS_TABLE = 'camisetas_movimientos';
+const MOVIMIENTOS_SELECT = '*';
+
+const pickPresentEntries = (entries) => Object.fromEntries(
+    entries.filter(([, value]) => value !== undefined && value !== null && value !== '')
+);
+
+const isSchemaMismatchError = (error) => {
+    const message = [error?.message, error?.details, error?.hint]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    return message.includes('column')
+        || message.includes('schema cache')
+        || message.includes('could not find')
+        || message.includes('does not exist');
+};
+
+const buildMovimientoPayloadVariants = (movimiento) => {
+    const base = [
+        ['tipo', movimiento.tipo],
+        ['fecha', movimiento.fecha],
+        ['concepto', movimiento.concepto],
+        ['importe', Number.parseFloat(movimiento.importe)],
+        ['tipo_documento', movimiento.tipo_documento],
+        ['ocr_detectado', movimiento.ocr_detectado]
+    ];
+
+    return [
+        pickPresentEntries([
+            ...base,
+            ['categoria', movimiento.categoria],
+            ['descripcion', movimiento.observaciones],
+            ['url_documento', movimiento.url_pdf]
+        ]),
+        pickPresentEntries([
+            ...base,
+            ['categoría', movimiento.categoria],
+            ['descripcion', movimiento.observaciones],
+            ['url_documento', movimiento.url_pdf]
+        ]),
+        pickPresentEntries([
+            ...base,
+            ['categoria', movimiento.categoria],
+            ['observaciones', movimiento.observaciones],
+            ['url_pdf', movimiento.url_pdf]
+        ]),
+        pickPresentEntries([
+            ...base,
+            ['categoría', movimiento.categoria],
+            ['observaciones', movimiento.observaciones],
+            ['url_pdf', movimiento.url_pdf]
+        ])
+    ];
+};
 
 const isLikelyNetworkError = (error) => {
     const rawMessage = [error?.message, error?.details, error?.hint]
@@ -61,7 +116,7 @@ export function initSupabase() {
 export async function getMovimientos(filters = {}) {
     let query = supabase
         .from(MOVIMIENTOS_TABLE)
-        .select('id, fecha, concepto, importe, created_at, updated_at')
+        .select(MOVIMIENTOS_SELECT)
         .order('fecha', { ascending: false });
 
     // Aplicar solo filtros compatibles con el esquema actual.
@@ -100,23 +155,27 @@ export async function getMovimientos(filters = {}) {
  * @returns {Promise<Object>} El registro creado.
  */
 export async function createMovimiento(movimiento) {
-    const payload = {
-        fecha: movimiento.fecha,
-        concepto: movimiento.concepto,
-        importe: parseFloat(movimiento.importe)
-    };
+    const payloadVariants = buildMovimientoPayloadVariants(movimiento);
+    let lastError = null;
 
-    const { data, error } = await supabase
-        .from(MOVIMIENTOS_TABLE)
-        .insert([payload])
-        .select('id, fecha, concepto, importe, created_at, updated_at')
-        .single();
+    for (const payload of payloadVariants) {
+        const { data, error } = await supabase
+            .from(MOVIMIENTOS_TABLE)
+            .insert([payload])
+            .select(MOVIMIENTOS_SELECT)
+            .single();
 
-    if (error) {
-        throw buildSupabaseError(error, 'guardar el movimiento');
+        if (!error) {
+            return data;
+        }
+
+        lastError = error;
+        if (!isSchemaMismatchError(error)) {
+            break;
+        }
     }
 
-    return data;
+    throw buildSupabaseError(lastError, 'guardar el movimiento');
 }
 
 /**
