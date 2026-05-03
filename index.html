@@ -41,6 +41,9 @@
             <path fill="currentColor"
                 d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
         </symbol>
+        <symbol id="upload" viewBox="0 0 24 24">
+            <path fill="currentColor" d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z" />
+        </symbol>
     </svg>
 
     <div class="container">
@@ -246,9 +249,16 @@
                 </select>
                 <input type="text" id="filter-provider" placeholder="Filtrar por concepto...">
                 <div class="export-actions">
+                    <button type="button" id="import-csv-trigger" class="file-label">
+                        <svg style="width:1.2em;height:1.2em;vertical-align:middle;margin-right:4px;">
+                            <use href="#upload"></use>
+                        </svg>
+                        Importar CSV
+                    </button>
                     <button type="button" id="export-csv" class="file-label">Exportar CSV</button>
                     <button type="button" id="export-pdf" class="file-label btn-pdf">Exportar PDF</button>
                 </div>
+                <input type="file" id="import-csv-file" accept=".csv" class="hidden">
             </div>
 
             <div class="table-container">
@@ -352,4 +362,5 @@
         }
     </script>
 </body>
+
 </html>

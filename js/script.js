@@ -50,6 +50,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageInfo = document.getElementById('page-info');
     const exportCsvBtn = document.getElementById('export-csv');
     const exportPdfBtn = document.getElementById('export-pdf');
+    const importCsvTrigger = document.getElementById('import-csv-trigger');
+    const importCsvFile = document.getElementById('import-csv-file');
     const dashBalance = document.getElementById('dash-balance');
     const dashIngresos = document.getElementById('dash-ingresos');
     const dashGastos = document.getElementById('dash-gastos');
@@ -123,6 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTable();
         });
         exportCsvBtn?.addEventListener('click', exportMovementsToCsv);
+        importCsvTrigger?.addEventListener('click', () => importCsvFile.click());
+        importCsvFile?.addEventListener('change', handleImportCSV);
         window.addEventListener('online', handleConnectionBackOnline);
         window.addEventListener('offline', handleConnectionLost);
     };
@@ -1173,6 +1177,96 @@ document.addEventListener('DOMContentLoaded', () => {
         a.remove();
         URL.revokeObjectURL(url);
         showToast('CSV exportado correctamente', 'success');
+    };
+
+    const handleImportCSV = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            try {
+                const text = event.target.result;
+                const lines = text.split(/\r?\n/);
+                if (lines.length < 2) {
+                    showToast('El archivo CSV está vacío o no es válido.', 'error');
+                    return;
+                }
+
+                // Detectar separador (punto y coma o coma)
+                const firstLine = lines[0];
+                const separator = firstLine.includes(';') ? ';' : ',';
+                
+                const headers = firstLine.split(separator).map(h => h.replace(/^"|"$/g, '').trim());
+                const rows = lines.slice(1).filter(line => line.trim());
+
+                let importedCount = 0;
+                const newMovements = [];
+
+                rows.forEach(line => {
+                    const values = [];
+                    let current = '';
+                    let inQuotes = false;
+                    
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        if (char === '"') {
+                            if (inQuotes && line[i+1] === '"') {
+                                current += '"';
+                                i++;
+                            } else {
+                                inQuotes = !inQuotes;
+                            }
+                        } else if (char === separator && !inQuotes) {
+                            values.push(current.trim());
+                            current = '';
+                        } else {
+                            current += char;
+                        }
+                    }
+                    values.push(current.trim());
+
+                    const rowData = {};
+                    headers.forEach((header, index) => {
+                        rowData[header] = values[index] ? values[index].replace(/^"|"$/g, '') : '';
+                    });
+
+                    if (rowData.Fecha && rowData.Importe) {
+                        newMovements.push({
+                            id: `imported-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                            Timestamp: new Date().toISOString(),
+                            Tipo: rowData.Tipo || 'Gasto',
+                            Fecha: rowData.Fecha,
+                            Concepto: rowData.Concepto || '',
+                            Categoría: rowData['Categoría'] || rowData.Categoria || '',
+                            Importe: parseFloat(rowData.Importe.replace(',', '.')) || 0,
+                            Observaciones: rowData.Observaciones || '',
+                            'Tipo Documento': rowData['Tipo Documento'] || rowData.Documento || 'Factura',
+                            'URL PDF': rowData['URL Documento'] || rowData['URL PDF'] || null,
+                            'OCR Detectado': rowData['OCR Detectado'] || 'Importado via CSV'
+                        });
+                        importedCount++;
+                    }
+                });
+
+                if (newMovements.length > 0) {
+                    const existingKeys = new Set(allMovements.map(m => `${m.Fecha}|${m.Concepto}|${m.Importe}`));
+                    const uniqueNewMovements = newMovements.filter(m => !existingKeys.has(`${m.Fecha}|${m.Concepto}|${m.Importe}`));
+
+                    allMovements = [...uniqueNewMovements, ...allMovements];
+                    saveMovementCache(allMovements);
+                    renderTable();
+                    showToast(`Se importaron ${uniqueNewMovements.length} movimientos nuevos.`, 'success');
+                } else {
+                    showToast('No se encontraron movimientos válidos en el CSV.', 'warning');
+                }
+            } catch (err) {
+                console.error('Error al importar CSV:', err);
+                showToast('Error al procesar el archivo CSV.', 'error');
+            }
+            e.target.value = '';
+        };
+        reader.readAsText(file);
     };
 
     const handleExportPDF = () => {
