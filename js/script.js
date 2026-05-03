@@ -404,16 +404,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const mapSupabaseMovement = (mov) => ({
         id: mov.id,
-        Timestamp: mov.timestamp,
-        Tipo: mov.tipo,
+        Timestamp: mov.created_at || mov.updated_at || mov.fecha,
+        Tipo: mov.tipo || 'Gasto',
         Fecha: new Date(mov.fecha).toLocaleDateString('es-ES'),
         Concepto: mov.concepto,
-        Categoría: mov.categoria,
-        Importe: mov.importe,
-        Observaciones: mov.observaciones,
-        'Tipo Documento': mov.tipo_documento,
-        'URL PDF': mov.url_pdf,
-        'OCR Detectado': mov.ocr_detectado
+        Categoría: mov.categoria || '',
+        Importe: Number(mov.importe || 0),
+        Observaciones: mov.observaciones || '',
+        'Tipo Documento': mov.tipo_documento || '',
+        'URL PDF': mov.url_pdf || mov.url_documento || '',
+        'OCR Detectado': mov.ocr_detectado || ''
     });
 
     const renderTableMessage = (message) => {
@@ -1340,10 +1340,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('¿Estás seguro de que quieres eliminar este movimiento? Esta acción no se puede deshacer.')) return;
         deleteButton.disabled = true;
 
-        const numericId = parseInt(id, 10);
+        const remoteId = String(id);
         const queueDeleteAndRemoveLocally = () => {
-            enqueueSyncOperation('delete-movement', { remoteId: numericId });
-            allMovements = allMovements.filter(mov => mov.id !== numericId);
+            enqueueSyncOperation('delete-movement', { remoteId });
+            allMovements = allMovements.filter(mov => String(mov.id) !== remoteId);
             saveMovementCache(allMovements);
             renderTable();
             setOfflineBannerMessage(`Sin conexión: hay ${getOfflineQueueCount()} cambio(s) pendientes de sincronizar con Supabase.`);
@@ -1356,8 +1356,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            await deleteMovimiento(numericId);
-            allMovements = allMovements.filter(mov => mov.id !== numericId);
+            await deleteMovimiento(remoteId);
+            allMovements = allMovements.filter(mov => String(mov.id) !== remoteId);
             saveMovementCache(allMovements);
             renderTable();
             showToast('Movimiento eliminado correctamente', 'success');

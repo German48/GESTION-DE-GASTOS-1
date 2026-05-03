@@ -8,6 +8,35 @@ import { SUPABASE_URL, SUPABASE_ANON_KEY, FACTURAS_BUCKET } from './supabase-con
 // Inicializar cliente de Supabase
 // Nota: Necesitas incluir la librería de Supabase en el HTML
 let supabase;
+const MOVIMIENTOS_TABLE = 'camisetas_movimientos';
+
+const isLikelyNetworkError = (error) => {
+    const rawMessage = [error?.message, error?.details, error?.hint]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+    return !navigator.onLine
+        || error instanceof TypeError
+        || rawMessage.includes('failed to fetch')
+        || rawMessage.includes('networkerror')
+        || rawMessage.includes('fetch');
+};
+
+const buildSupabaseError = (error, operation) => {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false;
+    const appError = new Error(error?.message || `No se pudo ${operation} en Supabase.`);
+
+    appError.cause = error;
+    appError.operation = operation;
+    appError.code = isLikelyNetworkError(error) ? 'OFFLINE_OR_NETWORK' : 'SUPABASE_ERROR';
+    appError.userMessage = appError.code === 'OFFLINE_OR_NETWORK'
+        ? `Sin conexión con Supabase. No se pudo ${operation}.`
+        : `Supabase devolvió un error al ${operation}.`;
+    appError.isOffline = offline;
+
+    return appError;
+};
 
 /**
  * Inicializar el cliente de Supabase.
@@ -31,20 +60,16 @@ export function initSupabase() {
  */
 export async function getMovimientos(filters = {}) {
     let query = supabase
-        .from('movimientos')
-        .select('*')
+        .from(MOVIMIENTOS_TABLE)
+        .select('id, fecha, concepto, importe, created_at, updated_at')
         .order('fecha', { ascending: false });
 
-    // Aplicar filtros
+    // Aplicar solo filtros compatibles con el esquema actual.
     if (filters.month) {
         const [year, month] = filters.month.split('-');
         const startDate = `${year}-${month}-01`;
         const endDate = new Date(year, month, 0).toISOString().split('T')[0];
         query = query.gte('fecha', startDate).lte('fecha', endDate);
-    }
-
-    if (filters.categoria) {
-        query = query.eq('categoria', filters.categoria);
     }
 
     if (filters.concepto) {
@@ -54,8 +79,7 @@ export async function getMovimientos(filters = {}) {
     const { data, error } = await query;
 
     if (error) {
-        console.error('Error al obtener movimientos:', error);
-        throw error;
+        throw buildSupabaseError(error, 'obtener los movimientos');
     }
 
     return data;
@@ -77,26 +101,19 @@ export async function getMovimientos(filters = {}) {
  */
 export async function createMovimiento(movimiento) {
     const payload = {
-        tipo: movimiento.tipo,
         fecha: movimiento.fecha,
         concepto: movimiento.concepto,
-        categoria: movimiento.categoria,
-        importe: parseFloat(movimiento.importe),
-        observaciones: movimiento.observaciones || null,
-        tipo_documento: movimiento.tipo_documento || 'Factura',
-        ocr_detectado: movimiento.ocr_detectado || null,
-        url_pdf: movimiento.url_pdf || null
+        importe: parseFloat(movimiento.importe)
     };
 
     const { data, error } = await supabase
-        .from('movimientos')
+        .from(MOVIMIENTOS_TABLE)
         .insert([payload])
-        .select()
+        .select('id, fecha, concepto, importe, created_at, updated_at')
         .single();
 
     if (error) {
-        console.error('Error al crear movimiento:', error);
-        throw error;
+        throw buildSupabaseError(error, 'guardar el movimiento');
     }
 
     return data;
@@ -109,13 +126,12 @@ export async function createMovimiento(movimiento) {
  */
 export async function deleteMovimiento(id) {
     const { error } = await supabase
-        .from('movimientos')
+        .from(MOVIMIENTOS_TABLE)
         .delete()
         .eq('id', id);
 
     if (error) {
-        console.error('Error al eliminar movimiento:', error);
-        throw error;
+        throw buildSupabaseError(error, 'eliminar el movimiento');
     }
 
     return true;
@@ -133,8 +149,7 @@ export async function createDocumentoPendiente(documento) {
         .single();
 
     if (error) {
-        console.error('Error al crear documento pendiente:', error);
-        throw error;
+        throw buildSupabaseError(error, 'guardar el pendiente');
     }
 
     return data;
@@ -152,8 +167,7 @@ export async function getDocumentosPendientes() {
         .order('created_at', { ascending: false });
 
     if (error) {
-        console.error('Error al obtener documentos pendientes:', error);
-        throw error;
+        throw buildSupabaseError(error, 'obtener los pendientes');
     }
 
     return data;
@@ -171,8 +185,7 @@ export async function updateDocumentoPendiente(id, patch) {
         .single();
 
     if (error) {
-        console.error('Error al actualizar documento pendiente:', error);
-        throw error;
+        throw buildSupabaseError(error, 'actualizar el pendiente');
     }
 
     return data;
@@ -193,8 +206,7 @@ export async function uploadFactura(file, fileName) {
         });
 
     if (error) {
-        console.error('Error al subir factura:', error);
-        throw error;
+        throw buildSupabaseError(error, 'subir la factura');
     }
 
     // Obtener URL pública
@@ -226,8 +238,7 @@ export async function uploadFacturaBase64(base64Data, fileName, contentType) {
         });
 
     if (error) {
-        console.error('Error al subir factura:', error);
-        throw error;
+        throw buildSupabaseError(error, 'subir la factura');
     }
 
     // Obtener URL pública
@@ -249,8 +260,7 @@ export async function deleteFactura(fileName) {
         .remove([fileName]);
 
     if (error) {
-        console.error('Error al eliminar factura:', error);
-        throw error;
+        throw buildSupabaseError(error, 'eliminar la factura');
     }
 
     return true;
@@ -262,20 +272,15 @@ export async function deleteFactura(fileName) {
  */
 export async function getEstadisticas() {
     const { data, error } = await supabase
-        .from('movimientos')
-        .select('tipo, importe');
+        .from(MOVIMIENTOS_TABLE)
+        .select('importe');
 
     if (error) {
-        console.error('Error al obtener estadísticas:', error);
-        throw error;
+        throw buildSupabaseError(error, 'obtener las estadísticas');
     }
 
     const stats = data.reduce((acc, mov) => {
-        if (mov.tipo === 'Ingreso') {
-            acc.totalIngresos += mov.importe;
-        } else {
-            acc.totalGastos += mov.importe;
-        }
+        acc.totalGastos += Number(mov.importe || 0);
         return acc;
     }, { totalIngresos: 0, totalGastos: 0 });
 
