@@ -16,6 +16,7 @@
     <script src='https://unpkg.com/tesseract.js@5.0.0/dist/tesseract.min.js'></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.25/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 
 <body>
@@ -249,16 +250,37 @@
                 </select>
                 <input type="text" id="filter-provider" placeholder="Filtrar por concepto...">
                 <div class="export-actions">
+                    <button type="button" id="import-json-trigger" class="file-label">
+                        <svg style="width:1.2em;height:1.2em;vertical-align:middle;margin-right:4px;">
+                            <use href="#upload"></use>
+                        </svg>
+                        Importar JSON
+                    </button>
+                    <button type="button" id="import-xlsx-trigger" class="file-label">
+                        <svg style="width:1.2em;height:1.2em;vertical-align:middle;margin-right:4px;">
+                            <use href="#upload"></use>
+                        </svg>
+                        Importar Excel
+                    </button>
                     <button type="button" id="import-csv-trigger" class="file-label">
                         <svg style="width:1.2em;height:1.2em;vertical-align:middle;margin-right:4px;">
                             <use href="#upload"></use>
                         </svg>
                         Importar CSV
                     </button>
-                    <button type="button" id="export-csv" class="file-label">Exportar CSV</button>
-                    <button type="button" id="export-pdf" class="file-label btn-pdf">Exportar PDF</button>
+                    <div class="dropdown-export">
+                        <button type="button" class="file-label">Exportar v</button>
+                        <div class="dropdown-content">
+                            <button type="button" id="export-csv">Exportar CSV</button>
+                            <button type="button" id="export-json">Exportar JSON</button>
+                            <button type="button" id="export-xlsx">Exportar Excel (XLSX)</button>
+                            <button type="button" id="export-pdf" class="btn-pdf">Exportar PDF</button>
+                        </div>
+                    </div>
                 </div>
                 <input type="file" id="import-csv-file" accept=".csv" class="hidden">
+                <input type="file" id="import-json-file" accept=".json" class="hidden">
+                <input type="file" id="import-xlsx-file" accept=".xlsx,.xls" class="hidden">
             </div>
 
             <div class="table-container">

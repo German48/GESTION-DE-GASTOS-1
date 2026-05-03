@@ -49,9 +49,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const nextPageBtn = document.getElementById('next-page');
     const pageInfo = document.getElementById('page-info');
     const exportCsvBtn = document.getElementById('export-csv');
+    const exportJsonBtn = document.getElementById('export-json');
+    const exportXlsxBtn = document.getElementById('export-xlsx');
     const exportPdfBtn = document.getElementById('export-pdf');
     const importCsvTrigger = document.getElementById('import-csv-trigger');
     const importCsvFile = document.getElementById('import-csv-file');
+    const importJsonTrigger = document.getElementById('import-json-trigger');
+    const importJsonFile = document.getElementById('import-json-file');
+    const importXlsxTrigger = document.getElementById('import-xlsx-trigger');
+    const importXlsxFile = document.getElementById('import-xlsx-file');
     const dashBalance = document.getElementById('dash-balance');
     const dashIngresos = document.getElementById('dash-ingresos');
     const dashGastos = document.getElementById('dash-gastos');
@@ -125,8 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTable();
         });
         exportCsvBtn?.addEventListener('click', exportMovementsToCsv);
+        exportJsonBtn?.addEventListener('click', exportMovementsToJSON);
+        exportXlsxBtn?.addEventListener('click', exportMovementsToXLSX);
+        exportPdfBtn?.addEventListener('click', handleExportPDF);
+        
         importCsvTrigger?.addEventListener('click', () => importCsvFile.click());
         importCsvFile?.addEventListener('change', handleImportCSV);
+        
+        importJsonTrigger?.addEventListener('click', () => importJsonFile.click());
+        importJsonFile?.addEventListener('change', handleImportJSON);
+        
+        importXlsxTrigger?.addEventListener('click', () => importXlsxFile.click());
+        importXlsxFile?.addEventListener('change', handleImportXLSX);
+
         window.addEventListener('online', handleConnectionBackOnline);
         window.addEventListener('offline', handleConnectionLost);
     };
@@ -1179,6 +1196,63 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast('CSV exportado correctamente', 'success');
     };
 
+    const processImportedMovements = (newMovements, sourceFormat) => {
+        if (newMovements.length === 0) {
+            showToast('No se detectaron movimientos válidos en el archivo.', 'warning');
+            return;
+        }
+
+        const normalizeDateForComparison = (dateStr) => {
+            if (!dateStr) return '';
+            // Si ya es DD/MM/YYYY
+            if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateStr)) return dateStr;
+            // Si es ISO YYYY-MM-DD
+            const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
+            return dateStr;
+        };
+
+        const existingKeys = new Set(
+            (allMovements || [])
+                .filter(m => m && m.Fecha)
+                .map(m => `${normalizeDateForComparison(m.Fecha)}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`)
+        );
+
+        const uniqueNewMovements = newMovements.filter(m => {
+            const key = `${normalizeDateForComparison(m.Fecha)}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`;
+            const isDuplicate = existingKeys.has(key);
+            return !isDuplicate;
+        });
+
+        if (uniqueNewMovements.length > 0) {
+            uniqueNewMovements.forEach(mov => {
+                const entry = enqueueSyncOperation('create-movement', {
+                    movimientoData: {
+                        fecha: mov.Fecha.split('/').reverse().join('-'),
+                        concepto: mov.Concepto,
+                        tipo: mov.Tipo,
+                        categoria: mov.Categoría,
+                        importe: mov.Importe,
+                        observaciones: mov.Observaciones,
+                        tipo_documento: mov['Tipo Documento'],
+                        url_documento: mov['URL PDF'],
+                        ocr_detectado: mov['OCR Detectado']
+                    }
+                });
+                mov._queued = true;
+                mov._queueId = entry.id;
+            });
+
+            allMovements = [...uniqueNewMovements, ...allMovements];
+            saveMovementCache(allMovements);
+            renderTable();
+            showToast(`Se importaron ${uniqueNewMovements.length} movimientos de ${newMovements.length} encontrados (${sourceFormat}).`, 'success');
+            if (navigator.onLine) processSyncQueue();
+        } else {
+            showToast(`Todos los movimientos (${newMovements.length}) ya estaban registrados.`, 'info');
+        }
+    };
+
     const handleImportCSV = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -1188,15 +1262,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const arrayBuffer = e.target.result;
                 let text = new TextDecoder('utf-8').decode(arrayBuffer);
-                
-                // Si contiene caracteres de reemplazo (como ), intentar con windows-1252
-                if (text.includes('')) {
-                    text = new TextDecoder('windows-1252').decode(arrayBuffer);
-                }
-
-                if (text.startsWith('\uFEFF')) {
-                    text = text.substring(1);
-                }
+                if (text.includes('')) text = new TextDecoder('windows-1252').decode(arrayBuffer);
+                if (text.startsWith('\uFEFF')) text = text.substring(1);
 
                 const lines = text.split(/\r?\n/).filter(line => line.trim());
                 if (lines.length < 2) {
@@ -1204,27 +1271,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     return;
                 }
 
-                const firstLine = lines[0];
-                const separator = firstLine.includes(';') ? ';' : ',';
-                const headers = firstLine.split(separator).map(h => h.replace(/^"|"$/g, '').trim());
+                const separator = lines[0].includes(';') ? ';' : ',';
+                const headers = lines[0].split(separator).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
                 const rows = lines.slice(1);
-
                 const newMovements = [];
-
-                const normalizeDate = (dateStr) => {
-                    if (!dateStr) return '';
-                    const ymd = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-                    if (ymd) return `${ymd[3]}/${ymd[2]}/${ymd[1]}`;
-                    const dmy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
-                    if (dmy) {
-                        const d = dmy[1].padStart(2, '0');
-                        const m = dmy[2].padStart(2, '0');
-                        let y = dmy[3];
-                        if (y.length === 2) y = '20' + y;
-                        return `${d}/${m}/${y}`;
-                    }
-                    return dateStr;
-                };
 
                 rows.forEach(line => {
                     const values = [];
@@ -1243,90 +1293,128 @@ document.addEventListener('DOMContentLoaded', () => {
                     values.push(current.trim());
 
                     const rowData = {};
-                    headers.forEach((header, index) => {
-                        const val = values[index];
-                        rowData[header.toLowerCase()] = (val !== undefined) ? val.replace(/^"|"$/g, '').trim() : '';
-                    });
+                    headers.forEach((h, i) => rowData[h] = (values[i] ?? '').replace(/^"|"$/g, '').trim());
 
-                    const getVal = (possibleKeys) => {
-                        const match = possibleKeys.find(k => rowData[k.toLowerCase()] !== undefined);
-                        return match ? rowData[match.toLowerCase()] : '';
+                    const getVal = (keys) => {
+                        const found = keys.find(k => rowData[k.toLowerCase()] !== undefined);
+                        return found ? rowData[found.toLowerCase()] : '';
                     };
 
-                    const fechaRaw = getVal(['Fecha', 'Date']);
-                    const importeRaw = getVal(['Importe', 'Amount', 'Monto']);
-
-                    if (fechaRaw && importeRaw) {
-                        const cleanImporte = importeRaw.replace(/[€$£\s]/g, '').replace(',', '.');
-                        const importeNum = parseFloat(cleanImporte);
-
-                        if (!isNaN(importeNum)) {
-                            const fechaNorm = normalizeDate(fechaRaw);
+                    const fRaw = getVal(['Fecha', 'Date']);
+                    const iRaw = getVal(['Importe', 'Amount', 'Monto']);
+                    if (fRaw && iRaw) {
+                        const imp = parseFloat(iRaw.replace(/[€$£\s]/g, '').replace(',', '.'));
+                        if (!isNaN(imp)) {
                             newMovements.push({
                                 Timestamp: new Date().toISOString(),
-                                Tipo: getVal(['Tipo', 'Type']) || (importeNum < 0 ? 'Gasto' : 'Ingreso'),
-                                Fecha: fechaNorm,
-                                Concepto: getVal(['Concepto', 'Concept', 'Description', 'Proveedor', 'Documento']),
-                                Categoría: getVal(['Categoría', 'Categoria', 'Category', 'Clase']),
-                                Importe: Math.abs(importeNum),
-                                Observaciones: getVal(['Observaciones', 'Notes', 'Comentarios']),
-                                'Tipo Documento': getVal(['Tipo Documento', 'Documento', 'DocType']) || 'Factura',
-                                'URL PDF': getVal(['URL Documento', 'URL_Documento', 'URL PDF', 'Link', 'URL_PDF']),
-                                'OCR Detectado': 'Importado via CSV'
+                                Tipo: getVal(['Tipo', 'Type']) || (imp < 0 ? 'Gasto' : 'Ingreso'),
+                                Fecha: fRaw.includes('-') ? fRaw.split('-').reverse().join('/') : fRaw,
+                                Concepto: getVal(['Concepto', 'Concept', 'Description', 'Proveedor']),
+                                Categoría: getVal(['Categoría', 'Categoria', 'Category']),
+                                Importe: Math.abs(imp),
+                                Observaciones: getVal(['Observaciones', 'Notes']),
+                                'Tipo Documento': getVal(['Tipo Documento', 'DocType']) || 'Factura',
+                                'URL PDF': getVal(['URL PDF', 'URL Documento']),
+                                'OCR Detectado': 'Importado CSV'
                             });
                         }
                     }
                 });
-
-                if (newMovements.length > 0) {
-                    const existingKeys = new Set(
-                        (allMovements || [])
-                            .filter(m => m && m.Fecha)
-                            .map(m => `${normalizeDate(m.Fecha)}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`)
-                    );
-
-                    const uniqueNewMovements = newMovements.filter(m => {
-                        const key = `${m.Fecha}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`;
-                        return !existingKeys.has(key);
-                    });
-
-                    if (uniqueNewMovements.length > 0) {
-                        uniqueNewMovements.forEach(mov => {
-                            const entry = enqueueSyncOperation('create-movement', {
-                                movimientoData: {
-                                    fecha: mov.Fecha.split('/').reverse().join('-'),
-                                    concepto: mov.Concepto,
-                                    tipo: mov.Tipo,
-                                    categoria: mov.Categoría,
-                                    importe: mov.Importe,
-                                    observaciones: mov.Observaciones,
-                                    tipo_documento: mov['Tipo Documento'],
-                                    url_documento: mov['URL PDF'],
-                                    ocr_detectado: mov['OCR Detectado']
-                                }
-                            });
-                            mov._queued = true;
-                            mov._queueId = entry.id;
-                        });
-
-                        allMovements = [...uniqueNewMovements, ...allMovements];
-                        saveMovementCache(allMovements);
-                        renderTable();
-                        showToast(`Se importaron ${uniqueNewMovements.length} movimientos nuevos con éxito.`, 'success');
-                        if (navigator.onLine) processSyncQueue();
-                    } else {
-                        showToast('Todos los movimientos del archivo ya estaban registrados.', 'info');
-                    }
-                } else {
-                    showToast('No se detectaron movimientos válidos.', 'warning');
-                }
+                processImportedMovements(newMovements, 'CSV');
             } catch (err) {
-                console.error('Error en importación:', err);
-                showToast('Error al procesar el CSV.', 'error');
+                console.error(err);
+                showToast('Error al procesar CSV', 'error');
             }
             e.target.value = '';
         };
         reader.readAsArrayBuffer(file);
+    };
+
+    const handleImportJSON = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                const items = Array.isArray(data) ? data : (data.movements || data.movimientos || []);
+                const normalized = items.map(m => ({
+                    Timestamp: m.Timestamp || new Date().toISOString(),
+                    Tipo: m.Tipo || 'Gasto',
+                    Fecha: m.Fecha || '',
+                    Concepto: m.Concepto || '',
+                    Categoría: m.Categoría || m.Categoria || '',
+                    Importe: Number(m.Importe || 0),
+                    Observaciones: m.Observaciones || '',
+                    'Tipo Documento': m['Tipo Documento'] || 'Factura',
+                    'URL PDF': m['URL PDF'] || '',
+                    'OCR Detectado': m['OCR Detectado'] || 'Importado JSON'
+                })).filter(m => m.Fecha && m.Importe);
+                processImportedMovements(normalized, 'JSON');
+            } catch (err) {
+                showToast('Error al procesar JSON', 'error');
+            }
+            e.target.value = '';
+        };
+        reader.readAsText(file);
+    };
+
+    const handleImportXLSX = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const json = XLSX.utils.sheet_to_json(firstSheet);
+                
+                const normalized = json.map(row => {
+                    const getVal = (keys) => {
+                        const found = keys.find(k => row[k] !== undefined);
+                        return found ? row[found] : '';
+                    };
+                    const imp = parseFloat(String(getVal(['Importe', 'Amount'])).replace(',', '.'));
+                    return {
+                        Timestamp: new Date().toISOString(),
+                        Tipo: getVal(['Tipo', 'Type']) || (imp < 0 ? 'Gasto' : 'Ingreso'),
+                        Fecha: getVal(['Fecha', 'Date']),
+                        Concepto: getVal(['Concepto', 'Concept', 'Description']),
+                        Categoría: getVal(['Categoría', 'Categoria', 'Category']),
+                        Importe: Math.abs(imp),
+                        Observaciones: getVal(['Observaciones', 'Notes']),
+                        'Tipo Documento': getVal(['Tipo Documento', 'DocType']) || 'Factura',
+                        'URL PDF': getVal(['URL PDF', 'URL Documento']),
+                        'OCR Detectado': 'Importado Excel'
+                    };
+                }).filter(m => m.Fecha && m.Importe);
+                processImportedMovements(normalized, 'Excel');
+            } catch (err) {
+                showToast('Error al procesar Excel', 'error');
+            }
+            e.target.value = '';
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const exportMovementsToJSON = () => {
+        const data = JSON.stringify(allMovements, null, 2);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `gestion-movimientos-${new Date().toISOString().slice(0,10)}.json`;
+        a.click();
+        showToast('JSON exportado', 'success');
+    };
+
+    const exportMovementsToXLSX = () => {
+        const ws = XLSX.utils.json_to_sheet(allMovements);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Movimientos");
+        XLSX.writeFile(wb, `gestion-movimientos-${new Date().toISOString().slice(0,10)}.xlsx`);
+        showToast('Excel exportado', 'success');
     };
 
     const handleExportPDF = () => {
