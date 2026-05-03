@@ -410,7 +410,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cachedMovements.length) return cachedMovements;
         
         console.log('Caché vacía. Hidratando desde MOVEMENTS_SEED...');
-        return MOVEMENTS_SEED || [];
+        const seed = MOVEMENTS_SEED || [];
+        if (seed.length) saveMovementCache(seed);
+        return seed;
     };
 
     const CSV_METADATA_URL = './gestion-movimientos-2026-03-24.csv';
