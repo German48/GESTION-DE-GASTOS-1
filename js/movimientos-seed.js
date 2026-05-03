@@ -9,7 +9,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 34.11,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1773752750972.png",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1773752750972.png&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 2 1 02 |",
     "_seeded": true
   },
@@ -23,7 +23,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 67.6,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1773651834519.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1773651834519.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 16/03/2026 | Importe: 67,60",
     "_seeded": true
   },
@@ -37,7 +37,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 19.4,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1773753059198.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1773753059198.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 1/05/30 | Importe: 19.40",
     "_seeded": true
   },
@@ -51,7 +51,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 182.22,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1773752990445.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1773752990445.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 05/03/2026 | Importe: 507 200,00",
     "_seeded": true
   },
@@ -65,7 +65,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 135.07,
     "Observaciones": "Piezas para los baños",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1772618606762.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1772618606762.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 02/03/2026 | Importe: 135,07",
     "_seeded": true
   },
@@ -79,7 +79,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 14.68,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1769430678497.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1769430678497.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 26/01/2026 |",
     "_seeded": true
   },
@@ -93,7 +93,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 15.97,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1769429915520.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1769429915520.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 26/01/2026 |",
     "_seeded": true
   },
@@ -107,7 +107,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 74.47,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1769086729439.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1769086729439.jpg&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   },
@@ -121,7 +121,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 5.84,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768485581884.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768485581884.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 15/01/2026 |",
     "_seeded": true
   },
@@ -135,7 +135,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 385.66,
     "Observaciones": "Varios",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://drive.google.com/file/d/1ju7We9Ga0ouNfKs3NGclieEVjWSviJ8A/view?usp=drivesdk",
+    "URL PDF": "./assets/facturas/drive_1ju7We9Ga0ouNfKs3NGclieEVjWSviJ8A.jpg",
     "OCR Detectado": "Datos detectados: Fecha: 14/01/2026 |",
     "_seeded": true
   },
@@ -177,7 +177,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 74.73,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768310048521.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768310048521.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Reconociendo texto...",
     "_seeded": true
   },
@@ -191,7 +191,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 63.56,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768310640684.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768310640684.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 09/12/2025 |",
     "_seeded": true
   },
@@ -219,7 +219,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 90.81,
     "Observaciones": "Kit Pico + Aguja 1.3",
     "Tipo Documento": "Recibo",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768311312170.png",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768311312170.png&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   },
@@ -233,7 +233,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 49.4,
     "Observaciones": "Magueras neumáticas",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768310130246.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768310130246.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 20/11/2025 |",
     "_seeded": true
   },
@@ -247,7 +247,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 65.73,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768309970683.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768309970683.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 17/11/2025 |",
     "_seeded": true
   },
@@ -261,7 +261,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 68.3,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768309886013.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768309886013.jpeg&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   },
@@ -275,7 +275,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 94.05,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768309801441.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768309801441.jpeg&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   },
@@ -289,7 +289,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 180.27,
     "Observaciones": "",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1768309649212.jpeg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1768309649212.jpeg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 04/11/2025 |",
     "_seeded": true
   },
@@ -303,7 +303,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 152.35,
     "Observaciones": "",
     "Tipo Documento": "Recibo",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1761927664558.png",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1761927664558.png&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 30/10/2025 |",
     "_seeded": true
   },
@@ -317,7 +317,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 84.65,
     "Observaciones": "Materiales varios",
     "Tipo Documento": "Recibo",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1760356074917.png",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1760356074917.png&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 13/10/2025 |",
     "_seeded": true
   },
@@ -331,7 +331,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 211.86,
     "Observaciones": "DEVOLUCIÓN",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1759872052021.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1759872052021.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 29/09/2025 |",
     "_seeded": true
   },
@@ -345,7 +345,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 25.06,
     "Observaciones": "Pedido Jonás",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1759871894787.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1759871894787.jpg&src=supabase-antiguo",
     "OCR Detectado": "Datos detectados: Fecha: 29/09/2025 |",
     "_seeded": true
   },
@@ -387,7 +387,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 547.77,
     "Observaciones": "Pedido Nicolás",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1759871753955.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1759871753955.jpg&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   },
@@ -401,7 +401,7 @@ export const MOVEMENTS_SEED = [
     "Importe": 614.22,
     "Observaciones": "Varios inicio del curso",
     "Tipo Documento": "Factura",
-    "URL PDF": "https://orypvcwpeomplyhqwzdh.supabase.co/storage/v1/object/public/facturas/factura_1759871402865.jpg",
+    "URL PDF": "./docs/factura-no-disponible.html?file=factura_1759871402865.jpg&src=supabase-antiguo",
     "OCR Detectado": "No se detectaron datos claros.",
     "_seeded": true
   }

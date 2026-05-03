@@ -1,8 +1,9 @@
-const CACHE_NAME = 'gestion-madera-v10';
+const CACHE_NAME = 'gestion-madera-v11';
 const ASSETS_TO_CACHE = [
     './',
     './index.html',
     './offline.html',
+    './docs/factura-no-disponible.html',
     './css/styles.css',
     './js/script.js',
     './js/movimientos-seed.js',
