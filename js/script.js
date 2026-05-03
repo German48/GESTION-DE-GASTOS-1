@@ -1186,8 +1186,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = async (event) => {
             try {
-                const text = event.target.result;
-                const lines = text.split(/\r?\n/);
+                let text = event.target.result;
+                // Eliminar BOM de UTF-8 si está presente
+                if (text.startsWith('\uFEFF')) {
+                    text = text.substring(1);
+                }
+
+                const lines = text.split(/\r?\n/).filter(line => line.trim());
                 if (lines.length < 2) {
                     showToast('El archivo CSV está vacío o no es válido.', 'error');
                     return;
@@ -1197,10 +1202,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const firstLine = lines[0];
                 const separator = firstLine.includes(';') ? ';' : ',';
                 
+                // Normalizar cabeceras: quitar espacios, comillas y limpiar nombres
                 const headers = firstLine.split(separator).map(h => h.replace(/^"|"$/g, '').trim());
-                const rows = lines.slice(1).filter(line => line.trim());
+                const rows = lines.slice(1);
 
-                let importedCount = 0;
                 const newMovements = [];
 
                 rows.forEach(line => {
@@ -1208,6 +1213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     let current = '';
                     let inQuotes = false;
                     
+                    // Parser básico para CSV con soporte de comillas
                     for (let i = 0; i < line.length; i++) {
                         const char = line[i];
                         if (char === '"') {
@@ -1228,41 +1234,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     const rowData = {};
                     headers.forEach((header, index) => {
-                        rowData[header] = values[index] ? values[index].replace(/^"|"$/g, '') : '';
+                        const val = values[index];
+                        rowData[header] = (val !== undefined) ? val.replace(/^"|"$/g, '').trim() : '';
                     });
 
-                    if (rowData.Fecha && rowData.Importe) {
-                        newMovements.push({
-                            id: `imported-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                            Timestamp: new Date().toISOString(),
-                            Tipo: rowData.Tipo || 'Gasto',
-                            Fecha: rowData.Fecha,
-                            Concepto: rowData.Concepto || '',
-                            Categoría: rowData['Categoría'] || rowData.Categoria || '',
-                            Importe: parseFloat(rowData.Importe.replace(',', '.')) || 0,
-                            Observaciones: rowData.Observaciones || '',
-                            'Tipo Documento': rowData['Tipo Documento'] || rowData.Documento || 'Factura',
-                            'URL PDF': rowData['URL Documento'] || rowData['URL PDF'] || null,
-                            'OCR Detectado': rowData['OCR Detectado'] || 'Importado via CSV'
-                        });
-                        importedCount++;
+                    // Helper para obtener valor de cabeceras parecidas (tolerancia a mayúsculas/minúsculas)
+                    const getVal = (possibleKeys) => {
+                        const keys = Object.keys(rowData);
+                        const match = keys.find(k => possibleKeys.some(p => k.toLowerCase() === p.toLowerCase()));
+                        return match ? rowData[match] : '';
+                    };
+
+                    const fecha = getVal(['Fecha', 'Date']);
+                    const importeRaw = getVal(['Importe', 'Amount', 'Monto']);
+
+                    if (fecha && importeRaw) {
+                        // Limpiar importe: quitar símbolos de moneda y manejar decimales europeos/americanos
+                        const cleanImporte = importeRaw.replace(/[€$£\s]/g, '').replace(',', '.');
+                        const importeNum = parseFloat(cleanImporte);
+
+                        if (!isNaN(importeNum)) {
+                            newMovements.push({
+                                id: `imported-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                                Timestamp: new Date().toISOString(),
+                                Tipo: getVal(['Tipo', 'Type']) || (importeNum < 0 ? 'Gasto' : 'Ingreso'),
+                                Fecha: fecha,
+                                Concepto: getVal(['Concepto', 'Concept', 'Description', 'Proveedor']),
+                                Categoría: getVal(['Categoría', 'Categoria', 'Category', 'Clase']),
+                                Importe: Math.abs(importeNum),
+                                Observaciones: getVal(['Observaciones', 'Notes', 'Comentarios']),
+                                'Tipo Documento': getVal(['Tipo Documento', 'Documento', 'DocType']) || 'Factura',
+                                'URL PDF': getVal(['URL Documento', 'URL_Documento', 'URL PDF', 'Link', 'URL_PDF']),
+                                'OCR Detectado': 'Importado via CSV'
+                            });
+                        }
                     }
                 });
 
                 if (newMovements.length > 0) {
-                    const existingKeys = new Set(allMovements.map(m => `${m.Fecha}|${m.Concepto}|${m.Importe}`));
-                    const uniqueNewMovements = newMovements.filter(m => !existingKeys.has(`${m.Fecha}|${m.Concepto}|${m.Importe}`));
+                    // Filtrar duplicados: comparamos con el estado actual usando un set de llaves únicas
+                    const existingKeys = new Set(
+                        (allMovements || [])
+                            .filter(m => m && m.Fecha)
+                            .map(m => `${m.Fecha}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`)
+                    );
 
-                    allMovements = [...uniqueNewMovements, ...allMovements];
-                    saveMovementCache(allMovements);
-                    renderTable();
-                    showToast(`Se importaron ${uniqueNewMovements.length} movimientos nuevos.`, 'success');
+                    const uniqueNewMovements = newMovements.filter(m => {
+                        const key = `${m.Fecha}|${(m.Concepto || '').trim()}|${(Number(m.Importe) || 0).toFixed(2)}`;
+                        return !existingKeys.has(key);
+                    });
+
+                    if (uniqueNewMovements.length > 0) {
+                        allMovements = [...uniqueNewMovements, ...allMovements];
+                        saveMovementCache(allMovements);
+                        renderTable();
+                        showToast(`Se importaron ${uniqueNewMovements.length} movimientos nuevos con éxito.`, 'success');
+                    } else {
+                        showToast('Todos los movimientos del archivo ya estaban registrados.', 'info');
+                    }
                 } else {
-                    showToast('No se encontraron movimientos válidos en el CSV.', 'warning');
+                    showToast('No se detectaron movimientos válidos. Verifica las columnas "Fecha" e "Importe".', 'warning');
                 }
             } catch (err) {
-                console.error('Error al importar CSV:', err);
-                showToast('Error al procesar el archivo CSV.', 'error');
+                console.error('Error detallado en importación:', err);
+                showToast('Error crítico al procesar el CSV. Revisa el formato del archivo.', 'error');
             }
             e.target.value = '';
         };
