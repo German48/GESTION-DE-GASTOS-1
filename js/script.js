@@ -5,6 +5,7 @@
 
 import { initSupabase, getMovimientos, createMovimiento, deleteMovimiento, uploadFacturaBase64, createDocumentoPendiente, getDocumentosPendientes, updateDocumentoPendiente } from './supabase-client.js';
 import { EXTERNAL_OCR_URL, EXTERNAL_OCR_API_KEY, EXTERNAL_OCR_TIMEOUT_MS } from './ocr-external-config.js';
+import { MOVEMENTS_SEED } from './movimientos-seed.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     // --- INICIALIZAR SUPABASE ---
@@ -385,7 +386,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hydrateMovementCacheFromSeed = async () => {
         const cachedMovements = loadMovementCache();
-        return cachedMovements.length ? cachedMovements : [];
+        if (cachedMovements.length) return cachedMovements;
+        
+        console.log('Caché vacía. Hidratando desde MOVEMENTS_SEED...');
+        return MOVEMENTS_SEED || [];
     };
 
     const CSV_METADATA_URL = './gestion-movimientos-2026-03-24.csv';
@@ -450,8 +454,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const loadMovementMetadataIndex = async () => {
         if (!movementMetadataIndexPromise) {
-            movementMetadataIndexPromise = fetch(CSV_METADATA_URL, { cache: 'no-store' })
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+            movementMetadataIndexPromise = fetch(CSV_METADATA_URL, { 
+                cache: 'no-store',
+                signal: controller.signal
+            })
                 .then((response) => {
+                    clearTimeout(timeoutId);
                     if (!response.ok) throw new Error(`No se pudo leer ${CSV_METADATA_URL} (HTTP ${response.status})`);
                     return response.text();
                 })
@@ -483,6 +494,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return index;
                 })
                 .catch((error) => {
+                    clearTimeout(timeoutId);
                     console.warn('No se pudo cargar el índice de metadatos del CSV.', error);
                     return new Map();
                 });
@@ -1063,7 +1075,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // --- CARGA DE DATOS DESDE SUPABASE ---
     const loadMovements = async () => {
         toggleLoading(true, 'Cargando movimientos desde Supabase...');
         try {
@@ -1075,30 +1086,31 @@ document.addEventListener('DOMContentLoaded', () => {
                 offlineStatusBanner.classList.add('hidden');
             }
         } catch (error) {
-            const cachedMovements = loadMovementCache().length ? loadMovementCache() : await hydrateMovementCacheFromSeed();
-
+            console.error('Error al cargar movimientos:', error);
+            
+            const cachedMovements = loadMovementCache();
             if (cachedMovements.length) {
                 allMovements = cachedMovements;
                 renderTable();
-
-                if (isOfflineLikeError(error)) {
-                    setOfflineBannerMessage('Sin conexión con Supabase: se muestra la última copia local disponible de los movimientos.');
-                    showToast('Sin conexión. Mostrando la última copia local de movimientos.', 'info');
-                } else {
-                    console.error('Error al cargar los movimientos desde Supabase; se usa la copia local.', error);
-                    setOfflineBannerMessage('Supabase no respondió correctamente. Se muestra la copia local disponible de los movimientos.');
-                    showToast('Supabase falló. Mostrando copia local de movimientos.', 'info');
-                }
-            } else if (isOfflineLikeError(error)) {
-                setOfflineBannerMessage('Sin conexión con Supabase: se muestra la última copia local disponible de los movimientos.');
-                allMovements = [];
-                renderTableMessage('Sin conexión con Supabase. Aún no hay una copia local de movimientos en este dispositivo.');
-                showToast('Sin conexión con Supabase y sin copia local disponible todavía.', 'info');
+                
+                const userMsg = isOfflineLikeError(error) 
+                    ? 'Sin conexión: mostrando copia local de movimientos.'
+                    : 'Supabase no responde: mostrando copia local.';
+                setOfflineBannerMessage(userMsg);
+                showToast(userMsg, 'info');
             } else {
-                console.error('Error al cargar los movimientos:', error);
-                allMovements = [];
-                renderTableMessage('No se pudieron cargar los movimientos desde Supabase ni desde la copia local.');
-                showToast('Error al cargar datos desde Supabase.', 'error');
+                // Si no hay cache, intentar hidratar desde el seed
+                console.log('Sin cache. Intentando hidratar desde MOVEMENTS_SEED...');
+                const seedMovements = await hydrateMovementCacheFromSeed();
+                if (seedMovements.length) {
+                    allMovements = seedMovements;
+                    renderTable();
+                    showToast('Sin conexión. Usando datos históricos de respaldo.', 'info');
+                } else {
+                    allMovements = [];
+                    renderTableMessage('No se pudieron cargar los movimientos ni hay copia local disponible.');
+                    showToast('Error crítico: no se pudo cargar ningún dato.', 'error');
+                }
             }
         }
     };

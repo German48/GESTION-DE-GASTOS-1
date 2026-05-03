@@ -287,7 +287,7 @@
     <script type="module" src="js/supabase-config.js"></script>
     <script type="module" src="js/supabase-client.js"></script>
     <script type="module" src="js/ocr-external-config.js"></script>
-    <script type="module" src="js/script.js?v=20260503b"></script>
+    <script type="module" src="js/script.js?v=20260503c"></script>
     <script>
         (function () {
             if (location.protocol === 'file:') {
@@ -344,7 +344,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 if (location.protocol === 'http:' || location.protocol === 'https:') {
-                    navigator.serviceWorker.register('./sw.js?v=20260503b')
+                    navigator.serviceWorker.register('./sw.js?v=20260503c')
                         .then(reg => console.log('Service Worker registrado:', reg))
                         .catch(err => console.warn('Error al registrar Service Worker:', err));
                 }

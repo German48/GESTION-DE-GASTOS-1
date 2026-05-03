@@ -112,6 +112,9 @@ const restRequest = async (table, {
     prefer,
     headers = {}
 } = {}) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
     try {
         const response = await fetch(buildRestUrl(table, query), {
             method,
@@ -122,8 +125,11 @@ const restRequest = async (table, {
                 ...headers,
                 ...(prefer ? { Prefer: prefer } : {})
             },
-            body: body === undefined ? undefined : JSON.stringify(body)
+            body: body === undefined ? undefined : JSON.stringify(body),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         const text = await response.text();
         const payload = text ? JSON.parse(text) : null;
@@ -134,7 +140,11 @@ const restRequest = async (table, {
 
         return payload;
     } catch (error) {
-        throw buildSupabaseError(error, 'consultar la API REST de Supabase');
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+            throw buildSupabaseError({ message: 'Tiempo de espera agotado (timeout)' }, `consultar ${table}`);
+        }
+        throw buildSupabaseError(error, `consultar ${table}`);
     }
 };
 
